@@ -4,7 +4,7 @@ Herdr's shipped Spaces list (0.1.16) with two visible changes: the spaces always
 under a "This computer" header, even when no remote machine is added, and the machine
 headers can be dragged into any order. Each space is a
 row with a coloured letter avatar, its name and, where unusual, its repo, branch and
-ahead/behind. No preview.png: screenshots of this setup show private data.
+ahead/behind. No preview.png: a live screenshot would show your own folders and prompts.
 
 ## What you see
 

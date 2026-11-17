@@ -191,7 +191,7 @@ line, failed ones `blocked`, idle ones `border`. A line takes the look of what i
 - **Demo**: with `"props": { "demo": true }` on the block, the card shows the made-up session
   in `fixture.js` with a running plan (task A2 expanded) and runs nothing. `"demo": "approval"`
   shows the same plan awaiting approval with the session idle (the button answers "demo: nothing
-  sent"); `"demo": "derived"` shows the old derived flow with stages. The window opened from it
+  sent"); `"demo": "derived"` shows the derived flow with stages. The window opened from it
   shows the same demo.
 
 ## Built from
@@ -204,7 +204,7 @@ line, failed ones `blocked`, idle ones `border`. A line takes the look of what i
     `approveRow`, `task`, `details` draw the plan; `announce` posts the toasts, `approve` sends.
   - `fixture.js`: the demo data, in the feed's shape, in three variants (plan, approval, derived).
   - `spinner.svg`: an unchanged copy of Herdr's `mods/workspace-chrome/spinner.svg`
-    (Apache-2.0, Herdr app 0.1.15), referenced as `mods/nc-orchestrator/spinner.svg`.
+    (Apache-2.0, Herdr app 0.1.15 and 0.1.16), referenced as `mods/nc-orchestrator/spinner.svg`.
 - **In the layout**: the `rail-orchestrator` block of `layouts/nc.json`, props `{ "card": "rail-orchestrator" }`.
   The header ends in a ✕ that hides the card (`layout.hide` with the `card` prop, its block id); the `nc-cards` bar shows it again.
   The window copy has no `card` prop and no ✕.

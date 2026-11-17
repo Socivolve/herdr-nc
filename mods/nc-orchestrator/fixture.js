@@ -3,7 +3,7 @@
 // demo: true          a v2 plan, running: every task status (pass, running, review, sent_back,
 //                     fail, conflict, pending), constraints, a branch, a delegate, linked agents.
 // demo: "approval"    the same plan awaiting approval, the session idle (the Approve button).
-// demo: "derived"     the old derived flow: stages done → running (with a done, a running and a
+// demo: "derived"     the derived flow: stages done → running (with a done, a running and a
 //                     failed agent) → pending.
 // All of them: a running, a finished and a failed workflow, running and done subagents.
 // Names and numbers are made up.
@@ -57,7 +57,7 @@ export function demo(now, variant) {
   const planFlow = {
     source: "plan", prompt: "Add rate limiting to the public API, then update the docs and the changelog",
     routes: ["plain", "reviewed", "orchestrate"], route: "orchestrate",
-    reason: "three independent slices after a shared interface", state: approval ? "awaiting_approval" : "running",
+    reason: "three independent parts after a shared interface", state: approval ? "awaiting_approval" : "running",
     steps: [
       { title: "interface", status: "done", done: 2, total: 2 },
       { title: "build", status: "error", done: 0, total: 6 },

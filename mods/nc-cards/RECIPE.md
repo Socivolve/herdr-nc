@@ -2,7 +2,7 @@
 
 A thin bar above the status line with one button per side column and one per card. A click
 shows or hides that part of the layout. Herdr keeps the choice in its layout clicks, so it
-survives restarts. No preview.png: screenshots of this setup show private data.
+survives restarts. No preview.png: a live screenshot would show your own folders and prompts.
 
 ## What you see
 

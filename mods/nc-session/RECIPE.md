@@ -3,8 +3,8 @@
 Two rail cards about the Claude Code session that the active space is running. "Usage by model"
 shows what the session has cost so far at API list price, split by model, with the main agent
 and its subagents shown apart. "Used in this session" shows which tools, skills and connectors it
-called and which files it edited and read. There is no `preview.png`, because a screenshot would
-show private data.
+called and which files it edited and read. There is no `preview.png`, because a live screenshot would
+show your own prompts and files.
 
 ## What you see
 
@@ -67,7 +67,7 @@ show private data.
   - `mod.json`: `{ "place": "none", "title": "Session" }`
   - `main.js`: the view
   - `fixture.js`: the demo payload
-  - `usage.py`: the feed, Python 3.9 standard library only, written as its own slice
+  - `usage.py`: the feed, Python 3.9 standard library only
 - **Layout:** two blocks in the `rail` column, with `{ "mod": "nc-session", "props": { "view": "usage" } }`
   and `{ "view": "used" }`, each also with `card` (its block id).
   The header ends in a ✕ that hides the card (`layout.hide` with the `card` prop, its block id); the `nc-cards` bar shows it again.
@@ -136,7 +136,7 @@ show private data.
     as `{id, status, tools, cost_usd, started, ended}`, or null. `flow.steps` is one step per
     phase, and `flow.outcome.status` is `done`/`error` for those states, else `working`.
     Without a v2 file `flow.reason`, `flow.state` and `flow.plan` are null.
-  - **Version 1**, the older skill hook, stays readable; `flow.source` becomes `"skill"`:
+  - **Version 1**, written by a skill or hook of your own, stays readable; `flow.source` becomes `"skill"`:
   ```
   { "v": 1,
     "prompt": "first line of the prompt",
@@ -165,12 +165,11 @@ show private data.
   sessions.
 - **The script goes as an argument.** Linux caps one argument at 128 KB; usage.py must stay below
   that, or the remote path needs a copy of the file on the machine instead.
-- **Two changes from the build spec:**
-  - Only an in-flight run is shared, not a 2.5 s window. The window would hand a just-finished
-    answer to the refresh that a status change starts, and the final cost could then show up
-    30 s late.
-  - While the agent is not working, the card refreshes every 30 s, where the spec refreshes
-    never.
+- **Sharing and refresh:**
+  - Only an in-flight run is shared between the two copies, never a recent answer: a cached
+    answer would reach the refresh that a status change starts, and the final cost could then
+    show up 30 s late.
+  - While the agent is not working, the card still refreshes every 30 s.
 
 ## Done when
 

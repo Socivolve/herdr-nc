@@ -47,7 +47,7 @@ async function runFeed(target, since) {
   return loginExec(on, ["nc-work", "feed", "--pid", String(pid), `--script=${code}`, `--since=${since}`], 25000);
 }
 
-// Deliberate exception to "state per copy in the class" (spec 2.5): while a helper run is in
+// Deliberate exception to "state per copy in the class": while a helper run is in
 // flight, the other copy asking for the same target and sig awaits it instead of starting its own.
 // Only in flight: a finished answer handed to a status-change refresh could hide the final cost.
 let inflight = null;

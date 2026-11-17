@@ -3,7 +3,7 @@
 Herdr's shipped Agents list (0.1.16) with one row added on top: four counts, how many
 agents need you, are done, are working and are idle, each with the same status glyph the
 list uses. Below it the list is unchanged: agents by priority or grouped by space, with
-their sub-agents as a tree. No preview.png: screenshots of this setup show private data.
+their sub-agents as a tree. No preview.png: a live screenshot would show your own folders and prompts.
 
 ## What you see
 

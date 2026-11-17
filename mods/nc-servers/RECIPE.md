@@ -3,8 +3,8 @@
 A small card in the right rail that lists the dev servers running in your project folders:
 every TCP port something on this computer listens on, as long as that program was started
 inside a local space folder or a pane's current folder. A green dot means it answers HTTP;
-click a row to open it in the browser. No preview.png: screenshots of this setup show
-private data.
+click a row to open it in the browser. No preview.png: a live screenshot would show
+your own folders and prompts.
 
 ## What you see
 
@@ -56,8 +56,8 @@ private data.
 
 - A folder counts when the listener's folder is the project folder or below it (with a `/`
   boundary: `/p/app` does not match `/p/ap`). Home and `/` never count, so the many system
-  and app listeners started from home stay hidden. Today all spaces have home as their
-  folder, so in practice pane folders decide.
+  and app listeners started from home stay hidden. If a space's folder is home, only
+  pane folders decide.
 - lsof reports real paths (`/private/tmp/…`); a pane folder given through a symlink
   (`/tmp/…`) does not match it.
 - IPv4 and IPv6 sockets of one pid and port show as one row; one program on two ports shows
