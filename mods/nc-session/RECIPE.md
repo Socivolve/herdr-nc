@@ -82,9 +82,9 @@ show your own prompts and files.
     with `timeout: 20000`. The mod checks `code === 0` before `JSON.parse`. `--since` is the
     last full answer's `sig` (empty at first). When nothing changed, the feed prints
     `{"v":1,"unchanged":true,"sig":…}` and the card keeps its data.
-- **On another machine** (a space with a `machine`): every command goes through `exec(…, { on })` and
-  that machine's login shell (`sh -lc 'exec "$@"' sh …`, so PATH has `~/.local/bin` and nothing is
-  shell-quoted):
+- **On another machine** (a space with a `machine`): every command goes through `exec(…, { on })`
+  as an argument vector, so nothing is shell-quoted. `hc` and `nc-work` also go through that
+  machine's login shell (`sh -lc 'exec "$@"' sh …`), so PATH has `~/.local/bin`:
   - `hc get <id> --json` there, with the `<machine>/` prefix of the address stripped. Ids other than
     `[A-Za-z0-9_.:-]` are refused before anything runs.
   - The foreground is `claude`: `/usr/bin/python3 -I -B -c <usage.py> --pid … --since …` there. The
