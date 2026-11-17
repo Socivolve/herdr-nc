@@ -266,7 +266,7 @@ export default class Orchestrator extends View {
     } else cx.timer.every(FAST, (cx) => this.tick(cx));
   }
 
-  // Spec 2.2 "Picking the agent to follow" (the same rule as nc-session and nc-folders).
+  // The agent to follow: the same rule as nc-session and nc-folders.
   follow() {
     const space = spaces().find((s) => s.active);
     const cands = space ? agents().filter((a) => a.space === space.id && (a.app === "claude-code" || a.program?.key === "claude")) : [];

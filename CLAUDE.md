@@ -17,7 +17,7 @@ This repo is a custom workspace for the Herdr desktop app. Read `README.md` firs
 3. `scripts/deploy --dry-run`, then `scripts/deploy`. Afterwards the output must show
    `errors []`, and no `*.error` may be reported.
 4. Look at it: `herdr-app shot "$TMPDIR/herdr-shot.png"` (always with a path outside the repo,
-   the screenshot shows private data). `herdr-app check` only checks the first render.
+   a live screenshot shows your own folders and prompts). `herdr-app check` only checks the first render.
 5. Do not commit or push without being asked.
 
 Run experiments that put the window at risk in a sandbox: your own short `HERDR_APP_HOME`, your

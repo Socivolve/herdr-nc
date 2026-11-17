@@ -8,7 +8,7 @@ mods/*/jsconfig.json
 *.corrupt-*
 # Click state (sizes, hidden panels, theme picks): changes constantly, never edit
 layouts/.state/
-# Screenshots show whatever is on screen (private data, terminal text)
+# Screenshots show whatever is on screen (your folders, terminal text)
 herdr-shot*.png
 # Machine-specific values, deploy records, backups, scripts/fetch-upstream downloads
 local/

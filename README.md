@@ -7,8 +7,6 @@ Claude Code session is doing: its orchestration flow, its cost by model and what
 
 <!-- Screenshots go here. Make them from the mods' demo fixtures only (made-up data),
      never from a live window. -->
-*Screenshots: coming soon, made from the demo fixtures (`fixture.js`), never from real sessions.*
-
 ## Requirements
 
 - macOS
@@ -25,7 +23,7 @@ Optional:
   `nc-session`/`nc-orchestrator` follow Claude Code sessions there (they need
   `/usr/bin/python3` on that machine).
 - `nc` from [nc-harness](https://github.com/Socivolve/nc-harness) and `nc-work` from
-  [nc-infra](https://github.com/Socivolve/nc-infra) for the extra entries in `programs.json`
+  [nc-infra](https://github.com/Socivolve/nc-infra) (both published soon) for the extra entries in `programs.json`
   and the orchestrator's v2 plan view. Without them those menu entries show as not installed;
   everything else works.
 - `nc-orchestrator` needs `nc-session` (it runs `nc-session/usage.py --orch`).
@@ -151,7 +149,7 @@ after an update, use `scripts/pull`, not `--force`.
 On non-US keyboard layouts, shortcuts with `[ ] / = +` may not be reachable. Prefer letters
 or digits for new shortcuts and try them out in Herdr.
 
-## Taking over and changing a Herdr mod
+## Copying and changing a Herdr mod
 
 Herdr's own mods and layouts are replaced on every start. So change them only as a copy:
 

@@ -15,8 +15,8 @@ export const DEMO = {
   total: { messages: 849, tokens: 123006638, usd: 58.7, unpriced: ["claude-next-1"] },
   used: {
     tools: [["Bash", 120], ["Read", 80], ["Edit", 31], ["Grep", 22], ["Write", 9], ["Agent", 6], ["Glob", 4]],
-    skills: [["artifact-design", 2], ["claude-api", 1]],
-    connectors: [["Gmail", 3], ["Google Drive", 1]],
+    skills: [["my-skill", 2], ["other-skill", 1]],
+    connectors: [["Calendar", 3], ["Docs", 1]],
     edited: ["mods/nc-session/main.js", "mods/nc-session/RECIPE.md", "layouts/nc.json"],
     read: ["README.md", "CLAUDE.md", "~/.config/herdr-app/AGENTS.md", "local/upstream/herdr-app-0.1.16/mods/agents/main.js"],
   },

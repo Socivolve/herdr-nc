@@ -23,7 +23,7 @@ constraints and phases (validated and capped as the writer's contract says; each
 subagent whose description starts with "<task id> " or "<task id>:"), flow.steps is one step per phase and
 flow.outcome.status follows the state (done, error, else working). Without a v2 file flow.reason, flow.state
 and flow.plan are null.
-Version 1, the older skill hook: its keys replace the derived flow and flow.source becomes "skill". Every key
+Version 1, written by a skill or hook of your own: its keys replace the derived flow and flow.source becomes "skill". Every key
 is optional; a key with the wrong type is ignored.
     {"v": 1,
      "prompt": "one line",                       (cut to 100 chars)
@@ -31,7 +31,7 @@ is optional; a key with the wrong type is ignored.
      "route": "reviewed",                         (the branch taken)
      "steps": [{"title": "research", "status": "done|running|pending|error", "done": 3, "total": 3}],  (max 12)
      "outcome": {"status": "working|done|error", "usd": 1.25}}   (merged over the derived outcome)
-This script never writes that file; the skill does.
+This script never writes that file.
 """
 import glob, json, os, re, sys, time
 from collections import Counter
@@ -661,8 +661,8 @@ def selftest():
     assert abs(sum(cost(m, x) for m, x in p) - 2 * (10 * 10 + 20 * 50 + 5 + 25) / 1e6) < 1e-12
     assert parts("claude-opus-5-5", u) == [("claude-opus-5-5", u)]
     assert label("claude-opus-5-5") == "Opus 5.5" and label("claude-fable-5") == "Fable 5"
-    assert connector("mcp__claude_ai_Google_Drive__search") == "Google Drive"
-    assert route_of([("Agent", "pr-review-toolkit:code-reviewer", False)]) == "reviewed"
+    assert connector("mcp__claude_ai_Google_Docs__search") == "Google Docs"
+    assert route_of([("Agent", "my-plugin:code-reviewer", False)]) == "reviewed"
     assert route_of([("Bash", None, False)]) == "plain" and route_of([("Agent", "implementer", False)]) == "plain"
     assert route_of([("Agent", "reviewer", False), ("Workflow", None, False)]) == "orchestrate"
     assert route_of([("Task", "Explore", True)]) == "orchestrate" and route_of([("Bash", None, True)]) == "plain"
@@ -727,8 +727,8 @@ def e2e(tmp):
         U(now - 56_000, [{"type": "text", "text": "[Request interrupted by user]"}]),
         A("m3", "claude-opus-5-5", now - 50_000, 1, [
             ("t3", "Workflow", {"script": "x"}), ("t4", "Agent", {"subagent_type": "code-reviewer"}),
-            ("t5", "Skill", {"skill": "artifact-design"}), ("t6", "mcp__claude_ai_Gmail__send", {}),
-            ("t7", "mcp__12345678-aaaa-bbbb-cccc-1234567890ab__x", {}), ("t8", "Edit", {"file_path": f"{home}/notes/x.md"}),
+            ("t5", "Skill", {"skill": "my-skill"}), ("t6", "mcp__claude_ai_Calendar__add", {}),
+            ("t7", "mcp__12345678-aaaa-bbbb-cccc-1234567890ab__x", {}), ("t8", "Edit", {"file_path": f"{home}/docs/x.md"}),
             ("t9", "Bash", {"command": "ls"})]),
         {"type": "queue-operation", "operation": "enqueue", "timestamp": iso(now - 10_000),
          "content": "<task-notification>\n<task-id>s1</task-id>\n<status>completed</status>\n</task-notification>"},
@@ -767,9 +767,9 @@ def e2e(tmp):
     assert abs(r["parts"]["main"]["usd"] - (one(20) + one(1))) < 1e-4
     assert abs(r["total"]["usd"] - (r["parts"]["main"]["usd"] + r["parts"]["sub"]["usd"])) < 1e-3
     used = r["used"]
-    assert used["read"] == ["README.md"] and used["edited"] == ["~/notes/x.md"], used  # errored Read t2 is dropped
+    assert used["read"] == ["README.md"] and used["edited"] == ["~/docs/x.md"], used  # errored Read t2 is dropped
     assert dict(used["tools"])["Read"] == 1 and dict(used["tools"])["Bash"] == 2 and "Skill" not in dict(used["tools"])
-    assert used["skills"] == [["artifact-design", 1]] and dict(used["connectors"]) == {"Gmail": 1, "connector 12345678": 1}
+    assert used["skills"] == [["my-skill", 1]] and dict(used["connectors"]) == {"Calendar": 1, "connector 12345678": 1}
     assert "never shown" not in json.dumps(r) and run(base, pid, r["sig"], home=home) == {"v": 1, "unchanged": True, "sig": r["sig"]}
 
     # orchestrator mode
