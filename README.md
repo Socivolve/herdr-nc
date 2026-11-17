@@ -34,12 +34,12 @@ Crew, musts and the overlay come from the nc-harness orchestrator; see the
 ## Architecture
 
 ```mermaid
-flowchart LR
+flowchart TB
   R["herdr-nc checkout"] -->|"scripts/check"| C["checks passed"]
   C -->|"scripts/deploy"| H["Herdr home"]
-  H -->|"Herdr watches it and applies changes live"| A["Herdr window, layout nc"]
+  H -->|"Herdr watches it,<br/>applies changes live"| A["Herdr window, layout nc"]
   A --> M["nc-* mods draw the cards"]
-  H -->|"scripts/pull: edits made in Herdr"| R
+  H -->|"scripts/pull:<br/>edits made in Herdr"| R
 ```
 
 You edit the files here, `scripts/check` validates them and `scripts/deploy` copies them into the
@@ -60,19 +60,15 @@ What each mod shows and reads is in [Mods](#mods).
 ### How the rail follows a Claude Code session
 
 ```mermaid
-flowchart LR
-  T["Claude Code terminal in the shown space"] -->|"hc get --json"| P["foreground pid"]
-  P -->|"claude on this Mac"| L["usage.py from the Herdr home"]
-  P -->|"claude on a remote machine"| R["usage.py sent along, run with python3 -c there"]
-  P -->|"other process on a remote machine"| W["nc-work feed: usage.py inside the nc-work task container"]
-  L -.->|"reads"| K["~/.claude where the session runs"]
-  R -.->|"reads"| K
-  W -.->|"reads"| K
-  H["nc orchestrator status (nc-harness)"] -->|"writes v3 status file"| K
+flowchart TB
+  T["Claude Code terminal<br/>in the shown space"] -->|"hc get --json"| P["foreground pid"]
+  P -->|"claude on this Mac"| L["usage.py<br/>from the Herdr home"]
+  P -->|"claude on a<br/>remote machine"| R["usage.py sent along,<br/>run with python3 -c there"]
+  P -->|"other process on a<br/>remote machine"| W["nc-work feed:<br/>usage.py inside the<br/>nc-work task container"]
   L --> J["one JSON object"]
   R --> J
   W --> J
-  J -->|"usage mode"| S["nc-session cards: Usage by model, Used in this session"]
+  J -->|"usage mode"| S["nc-session cards:<br/>Usage by model,<br/>Used in this session"]
   J -->|"--orch mode"| O["nc-orchestrator card"]
 ```
 
@@ -96,6 +92,18 @@ The two rail mods that follow Claude Code (`nc-session` and `nc-orchestrator`) s
    `--since <sig>` it prints only `{"v":1,"unchanged":true,...}` when no file changed, so the cards
    poll cheaply: `nc-session` every 5 s while the agent works and every 30 s otherwise,
    `nc-orchestrator` every 3 s while the session or a workflow runs and every 15 s otherwise.
+
+Where the data comes from:
+
+```mermaid
+flowchart TB
+  F["usage.py, run in<br/>any of the three ways"] -.->|"reads"| K["~/.claude where<br/>the session runs"]
+  H["nc orchestrator status<br/>(nc-harness)"] -->|"writes v3<br/>status file"| K
+```
+
+However `usage.py` runs, it reads `~/.claude` where the session runs. The nc-harness command
+`nc orchestrator status` writes its v3 status file into the same folder (see
+[The orchestrator plan view](#the-orchestrator-plan-view)).
 
 ### How the feed works
 
