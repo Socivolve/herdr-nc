@@ -1,12 +1,12 @@
 # nc-orchestrator
 
 A card that shows what the Claude Code session in the current space is doing, as an animated
-pipeline from top to bottom: the latest prompt, the main session, the route it took, the
+pipeline from top to bottom: the latest prompt, the main session, the crew it picked, the
 branches with the taken one lit, the stages of the active workflow with their agents, and the
 outcome with its estimated cost. At a glance: green is finished, blue and moving is being
 worked on right now, dashed is still to come, amber "!" failed. When the orchestrator writes a
-v2 plan (status file, see below), the card shows the plan instead of the stages: its state,
-constraints, phases with their lanes and tasks, and an "Approve plan" button while the plan
+v3 plan (status file, see below), the card shows the plan instead of the stages: its state,
+musts, phases with their lanes and tasks, and an "Approve plan" button while the plan
 waits. Under the pipeline, the card lists the session's workflows and its Agent-tool
 subagents. "pipeline ↗" opens the same view, larger, in a window, with the whole plan open.
 
@@ -24,11 +24,11 @@ Every node, line, icon and dot uses one of these looks (the `KIND`/`LOOKS` table
 
 | Look | Feed statuses | Colour | Border | Icon | Motion |
 | --- | --- | --- | --- | --- | --- |
-| running | running, working, busy; tasks: running, review, sent_back | `working` | solid `working`, plus a pulse ring | ring spinner | pulse ring, scanner, shimmer |
+| running | running, working, busy; tasks: running, review, redo | `working` | solid `working`, plus a pulse ring | ring spinner | pulse ring, scanner, shimmer |
 | done | done, completed; tasks: pass | `done` | solid `done` at ~55% | ✓ | none |
 | pending | pending, anything unknown | `dim` | dashed `border` | hollow ring | none |
 | failed | error, failed, killed, stale; tasks: fail, conflict, blocked | `blocked` | solid `blocked` | "!" in a ring | none |
-| skipped | a route not taken | `dim`, node at 60% opacity | dashed `border` | none | none |
+| skipped | a crew not picked | `dim`, node at 60% opacity | dashed `border` | none | none |
 | idle | the main session waiting | `idle` | solid `border` | hollow ring | none |
 
 Nodes are `surface` boxes. Lines (connectors) are 2px wide: running ones are a `border` track
@@ -47,37 +47,37 @@ line, failed ones `blocked`, idle ones `border`. A line takes the look of what i
     (bold), the model label (`muted`), and on the right the session's age ("43:00", or
     "3h 17m" from one hour) and its cost ("$31.42", semibold). Line 2, 11px `dim`:
     "working · 2 agents running · 48.2M tok". Running while the session is busy, else idle.
-  - a line into **route**: a small centred node "route → orchestrate", done once a route is set.
-    A v1 status file adds a "skill" badge, a v2 status file a "plan" badge (`raised` background,
+  - a line into **crew**: a small centred node "crew → team", done once `flow.route` is set.
+    A v1 status file adds a "skill" badge, a v3 status file a "plan" badge (`raised` background,
     `accent` text). Hovering the node shows `flow.reason` as a tooltip, when there is one.
   - **fork** (when `routes` has entries): a stem down to a horizontal rail, a short drop to each
-    branch, and the branch nodes side by side in equal cells (normally three: plain,
-    reviewed, orchestrate). The taken branch takes the outcome's look (running with pulse ring,
+    branch, and the branch nodes side by side in equal cells (normally three: one,
+    pair, team). The taken branch takes the outcome's look (running with pulse ring,
     done with ✓, failed with "!") with its name and the status word. The others are skipped:
     dashed, faded, "skipped". The taken path (stem, rail part, drops) is drawn in the outcome's
     look, the rest of the rail in `border`, the drops to skipped branches dashed. Under the
     taken branch a drop and a rail lead back to the centre line.
   - **plan** (when `flow.plan` is set; it replaces the stages): a `surface` panel (radius 8,
     1px `border`):
-    - a top row that wraps: the plan's state as a chip ("planning", "running" and "final check"
+    - a top row that wraps: the plan's state as a chip ("planning", "running" and "closing"
       in the running look with a pulsing dot, "awaiting approval" pending, "done", "error"
-      failed), then one `raised` badge per constraint ("C1", "C2", … in `muted`), the full text
+      failed), then one `raised` badge per must ("M1", "M2", … in `muted`), the full text
       as tooltip;
     - while the state is `awaiting_approval` and the followed agent is idle (or "done", idle
       not yet looked at): an "Approve plan" button (`solid` background, `solid_foreground` text),
       greyed (50%, not-allowed cursor) while a send runs; after a click a `dim` result line:
       "sending…", "sent", "not idle" or "error: <message>". The line stays until the plan's
       state changes or the card follows another agent;
-    - per phase a row "Phase 1 · interface" with "passed/total" on the right (11px, `dim`), then
+    - per phase a row "Phase 1 · seam" with "passed/total" on the right (11px, `dim`), then
       its lanes side by side in equal columns, each headed "Lane A" (10px, `dim`); in a card
       narrower than 420px the lanes stack. Lanes keep 3px padding for the pulse rings;
     - each task a compact chip (a node, radius 6, in its look): status icon, id (semibold),
-      role (`dim`), then "↻n" in `working` for sent_back (n = sendbacks), "⎇" when it has a
+      role (`dim`), then "↻n" in `working` for redo (n = redos), "⎇" when it has a
       branch, "D" when it has a delegate, and its review as a badge (`done` for "pass", `blocked`
       for "findings:…", else `accent`);
     - a click on a chip in the card expands it (one at a time; another click closes it):
-      the title (`foreground`), then `dim` labels with `muted` values: files, check, after,
-      a badge per constraint result ("C1 ✓" `done`, "C2 ✗" `blocked`), evidence, branch,
+      the title (`foreground`), then `dim` labels with `muted` values: files, proof, after,
+      a badge per must answer ("M1 ✓" `done` for kept, "M2 ✗" `blocked` for broken), evidence, branch,
       delegate with a "peek" button, review, and the linked subagent (icon, "running · 9 tools
       · $0.31 · 2m"). Empty fields are left out. "peek" shows only when a terminal named
       like the delegate id exists.
@@ -122,7 +122,7 @@ line, failed ones `blocked`, idle ones `border`. A line takes the look of what i
     `.loop("left", 0 → 110 − 18, 1600 ms)`;
   - pulsing dots: running agents and the chip's dot, `.loop("opacity", 0.3 → 1, 900 ms)`;
   - marching arrow: the running workflow, `.frames(["›  ", "›› ", "›››", " ››", "  ›", "   "], 140)`;
-  - spinners: running icons, `svg(spinner).spin(900)` (running, review and sent_back tasks too);
+  - spinners: running icons, `svg(spinner).spin(900)` (running, review and redo tasks too);
   - running segments of the plan bar, `.loop("opacity", 0.3 → 1, 900 ms)`;
   - progress fills glide to a new width over 600 ms when the data changes (`.transition("width")`).
 - **Stage data**: a stage is matched to its workflow by title: the first workflow whose phases
@@ -191,7 +191,8 @@ line, failed ones `blocked`, idle ones `border`. A line takes the look of what i
 - **Demo**: with `"props": { "demo": true }` on the block, the card shows the made-up session
   in `fixture.js` with a running plan (task A2 expanded) and runs nothing. `"demo": "approval"`
   shows the same plan awaiting approval with the session idle (the button answers "demo: nothing
-  sent"); `"demo": "derived"` shows the derived flow with stages. The window opened from it
+  sent"); `"demo": "closing"` shows the same plan in its closing state on crew "pair";
+  `"demo": "derived"` shows the derived flow with stages. The window opened from it
   shows the same demo.
 
 ## Built from
@@ -202,7 +203,7 @@ line, failed ones `blocked`, idle ones `border`. A line takes the look of what i
     `icon`, `pulseRing`, `node`, `connector`, `rail`, `fork`, `agentDots`, `stage`, `stages`,
     `chip`, `PLAN_STATE`, `tasksOf`, `badge`, `remoteId`, `noDrag`. Methods `plan`,
     `approveRow`, `task`, `details` draw the plan; `announce` posts the toasts, `approve` sends.
-  - `fixture.js`: the demo data, in the feed's shape, in three variants (plan, approval, derived).
+  - `fixture.js`: the demo data, in the feed's shape, in four variants (plan, approval, closing, derived).
   - `spinner.svg`: an unchanged copy of Herdr's `mods/workspace-chrome/spinner.svg`
     (Apache-2.0, Herdr app 0.1.15 and 0.1.16), referenced as `mods/nc-orchestrator/spinner.svg`.
 - **In the layout**: the `rail-orchestrator` block of `layouts/nc.json`, props `{ "card": "rail-orchestrator" }`.
@@ -215,7 +216,7 @@ line, failed ones `blocked`, idle ones `border`. A line takes the look of what i
   `openOverlay({ kind: "window", key: "nc-orchestrator-window", width: 760, height: 680,
   props: { window: true, demo } })`, `closeOverlay()`.
 - **gpui-kit**: `.loop` (opacity, top, left), `.frames`, `.spin`, `.transition` (width),
-  `.tooltip` (route reason, constraints), `.on_size_change` (lanes stack below 420px).
+  `.tooltip` (crew reason, musts), `.on_size_change` (lanes stack below 420px).
 - **What it runs**, and nothing else:
   - `hc get <address> --json`, once per followed terminal, to get the pid.
   - `/usr/bin/python3 -I -B <appHome>/mods/nc-session/usage.py --orch --pid <pid> --since <sig>`
@@ -246,10 +247,10 @@ line, failed ones `blocked`, idle ones `border`. A line takes the look of what i
   "session": { "id", "cwd", "status": "busy|idle|null", "model", "label", "started", "elapsed_s",
                "agents_running", "tokens", "usd" },
   "flow": { "source": "derived|skill|plan", "prompt", "routes": [...], "route",
-            "reason": null | "...", "state": null | "planning|awaiting_approval|running|final_check|done|error",
+            "reason": null | "...", "state": null | "planning|awaiting_approval|running|closing|done|error",
             "steps": [ { "title", "status": "done|running|pending|error", "done", "total" } ],
             "outcome": { "status": "working|done|error", "usd" },
-            "plan": null | { "constraints": [ { "id", "text" } ],
+            "plan": null | { "musts": [ { "id", "text" } ],
                              "phases": [ { "name", "lanes": [ { "id", "tasks": [ TASK ] } ] } ],
                              "counts": { "total", "pass", "fail", "running", "pending", "other" } } },
   "workflows": [ { "id", "name", "status": "running|completed|killed|failed|stale", "started", "ended",
@@ -259,9 +260,9 @@ line, failed ones `blocked`, idle ones `border`. A line takes the look of what i
   "subagents": [ { "id", "type", "description", "status", "model", "cost_usd", "tools", "started", "ended" } ],
   "scan_ms": 0 }
 
-TASK = { "id", "title", "role", "status": "pending|running|review|sent_back|pass|fail|blocked|conflict",
-         "files": [...], "check", "after": [...], "c": [...], "sendbacks", "branch", "delegate", "review",
-         "constraints": { "C1": "pass|fail" }, "evidence",
+TASK = { "id", "title", "role", "status": "pending|running|review|redo|pass|fail|blocked|conflict",
+         "files": [...], "proof", "after": [...], "musts": [...], "redos", "branch", "delegate", "review",
+         "answers": { "M1": "kept|broken" }, "evidence",
          "agent": null | { "id", "status", "tools", "cost_usd", "started", "ended" } }
 ```
 
@@ -272,20 +273,23 @@ TASK = { "id", "title", "role", "status": "pending|running|review|sent_back|pass
 - With `"unchanged": true` only `v` and `sig` come, and the card keeps its data.
 - The derived flow:
   - **prompt**: the latest typed prompt of the main transcript.
-  - **route**: `orchestrate` if, after that prompt, a Workflow ran, an Agent/Task call had
-    isolation "worktree", or 2+ Agent/Task calls had subagent_type implementer or tester; else
-    `reviewed` if an Agent/Task `subagent_type` contains "review"; else `plain`.
+  - **crew** (`route`, one of `routes` = one, pair, team): `team` if, after that prompt, a
+    Workflow ran, an Agent/Task call had isolation "worktree", or 2+ Agent/Task calls had
+    subagent_type implementer or tester; else `pair` if an Agent/Task `subagent_type` contains
+    "review"; else `one`.
   - **steps**: the phases of the newest workflow launched after the prompt.
   - **outcome**: `working` while the session is busy or a workflow, workflow agent or
     subagent is still running (they go on after the main turn ends), else `done`.
 
-### The v2 status file (the orchestrator's plan)
+### The v3 status file (the orchestrator's plan)
 
-`nc orchestrator status` from [nc-harness](https://github.com/Socivolve/nc-harness) (optional) writes
-`~/.claude/nc-orchestrator/<sessionId>.json` with `"v": 2`. The feed then sets `flow.source` to `"plan"`, takes route, reason and state from
-the file, builds `flow.plan` (tasks with their linked subagent: the newest one whose
+`nc orchestrator status` from [nc-harness](https://github.com/iAmSerathion/nc-harness) (optional) writes
+`~/.claude/nc-orchestrator/<sessionId>.json` with `"v": 3`. The feed then sets `flow.source` to `"plan"`,
+takes `flow.route` from its `crew` (one, pair or team) and reason and state from the file,
+builds `flow.plan` (tasks with their linked subagent: the newest one whose
 description starts with the task id and a space or ":"), one step per phase, and
-`outcome.status` from the state (`done`, `error`, else `working`). The card only reads it.
+`outcome.status` from the state (`done`, `error`, else `working`). Other versions
+are ignored and the derived flow shows. The card only reads it.
 
 ### Driving the diagram from your own skill: the v1 status file
 
@@ -316,13 +320,12 @@ name.
 - `routes`: any number of names. They are drawn side by side in equal cells; 2 to 4 fit the
   card.
 - `route`: the box with this name lights up. A name that isn't in `routes` lights nothing,
-  but the route node still shows it.
+  but the crew node still shows it.
 - `steps[].status`: `done | running | pending | error`. `total` may be `null`.
 - `outcome.status`: `working | done | error`. `outcome.usd` is a number. The key replaces
   the derived `outcome` as a whole, so an outcome without `usd` shows no cost.
-- When the file is used, `flow.source` is `"skill"` and the route node shows a "skill" badge.
-  The file's `routes` and `route` stay free names; the derived names are plain, reviewed,
-  orchestrate.
+- When the file is used, `flow.source` is `"skill"` and the crew node shows a "skill" badge.
+  The file's `routes` and `route` stay free names; the derived names are one, pair, team.
   Workflows, subagents and the main node always come from the transcripts.
 - Write it atomically (to a temp file, then rename), so a half-written file is never read.
   Neither this mod nor the feed ever writes or deletes it; delete it yourself to return to
@@ -335,12 +338,12 @@ name.
 - `herdr-app check` renders with `props()` null and no agents, so it only covers the empty
   state. To check the filled card, run the check on a temporary copy outside the repo and
   outside `~/.config/herdr-app` whose `props()` returns `{ demo: true }` (also `{ demo:
-  "approval" }`, `{ demo: "derived" }`, and `{ demo: true, window: true, overlay: "x" }` for the
+  "approval" }`, `{ demo: "closing" }`, `{ demo: "derived" }`, and `{ demo: true, window: true, overlay: "x" }` for the
   window); add `--print-spec` to see every `:loop`, `:frames`, `:spin`, `:transition` and
   `:tooltip` it built. Delete the copy afterwards. The check has no size and no terminals, so
   lanes render side by side and "peek" is hidden there.
-- Task ids and constraint ids can look alike (a lane C task "C1" next to constraint "C1"):
-  constraints are always badges in the top row or in an expanded task, tasks are chips.
+- Task ids and must ids can look alike (a lane M task "M1" next to must "M1"): musts are
+  always badges in the top row or in an expanded task, tasks are chips.
 - Toasts come from the card copy only, so an open window does not double them. A hidden card
   keeps ticking and still toasts.
 - "Approve plan" types "ok" into the followed agent. The `hc get` check right before refuses
@@ -381,21 +384,22 @@ name.
   - the prompt in a mono pill after "›";
   - main "Opus 5.5 … 43:00 $31.42" and "working · 2 agents running · 48.2M tok", with a pulse
     ring and a scanner on the line into it;
-  - route "→ orchestrate" (done border) with a "plan" badge and the reason as tooltip, the fork
-    with "orchestrate" running (pulse ring) and "plain" and "reviewed" dashed and "skipped";
-  - the plan: chip "running", badges C1 and C2 with their texts as tooltips; "Phase 1 ·
-    interface 2/2" with lanes A (A1 ✓, ⎇, "pass") and B (B1 ✓); "Phase 2 · build 0/6" with
-    lanes A (A2 spinning with D, expanded: title, files, check, after "A1", delegate "w-a2",
+  - "crew → team" (done border) with a "plan" badge and the reason as tooltip, the fork
+    with "team" running (pulse ring) and "one" and "pair" dashed and "skipped";
+  - the plan: chip "running", badges M1 and M2 with their texts as tooltips; "Phase 1 ·
+    seam 2/2" with lanes A (A1 ✓, ⎇, "pass") and B (B1 ✓); "Phase 2 · build 0/6" with
+    lanes A (A2 spinning with D, expanded: title, files, proof, after "A1", delegate "w-a2",
     agent "running · 9 tools · $0.31 · 2m"; A3 pending), B (B2 spinning with ⎇, B3 spinning
     with "↻1" and "findings:2") and C (C1 "!", C2 "!"); a click on another chip expands it
-    instead (C1 shows "C2 ✗" and its evidence);
+    instead (C1 shows "M2 ✗" and its evidence);
   - outcome "working · $6.85 so far" with a pulse ring and "2 of 8 pass" with an 8-segment bar
     (2 done, 3 pulsing, 2 failed, 1 empty);
   - workflows: rate-limit with the marching arrow and "· build", and its 3 build agents (✓,
     spinning with "Edit", "!"); "docs-review · 4m · $1.38" (✓) and "dependency-audit · failed" (!);
   - 4 subagent rows: Explore spinning, code-reviewer ✓ and dim, the two task agents.
 - With `"demo": "approval"`: chip "awaiting approval", the "Approve plan" button; a click shows
-  "demo: nothing sent". With `"demo": "derived"`: route "→ orchestrate" without a badge, and
+  "demo: nothing sent". With `"demo": "closing"`: chip "closing", "crew → pair" with "one"
+  and "team" dashed and "skipped". With `"demo": "derived"`: "crew → team" without a badge, and
   the stages: research ✓ 3/3 with a full green bar; build spinning 1/3 with a shimmering bar,
   the rail into it scanning, and three dots (done, pulsing, failed); review 0/2 with a dashed
   rail segment and an empty bar.
@@ -403,12 +407,12 @@ name.
 - With Claude Code working in the active space, the card fills within about 3 s, the
   elapsed time and the tokens grow, and a status change refreshes it at once. The same holds
   for a Claude Code session in a space on another machine (for example a remote server).
-- Running a Workflow switches the route to "orchestrate" and fills the stages; when a stage
+- Running a Workflow switches the crew to "team" and fills the stages; when a stage
   finishes, its bar glides full and the scanner moves on to the next one. An Agent call with
-  a review `subagent_type` and no Workflow switches the route to "reviewed".
+  a review `subagent_type` and no Workflow switches the crew to "pair".
 - A valid v1 status file for the session shows its routes, steps and outcome, and the "skill"
   badge. Deleting it returns the derived flow on the next refresh.
-- A v2 status file with route `orchestrate` and a plan awaiting approval shows the plan with
+- A v3 status file with crew `team` and a plan awaiting approval shows the plan with
   "awaiting approval", a warning toast, and (with the agent idle) "Approve plan"; a click types
   "ok" and shows "sent", or "not idle" while the agent works. A task set to `fail` toasts once;
   a `running` task with `delegate` set to `<name>` shows "D" and, with a terminal of that name,

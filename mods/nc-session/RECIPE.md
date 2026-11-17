@@ -90,7 +90,7 @@ show your own prompts and files.
   - The foreground is `claude`: `/usr/bin/python3 -I -B -c <usage.py> --pid … --since …` there. The
     script text is read once per load with `readTextFile` and goes along as one argument (~45 KB).
   - Anything else: `nc-work feed --pid <pid> --script=<usage.py> --since=<sig>` there. That is
-    `nc-work` from [nc-infra](https://github.com/Socivolve/nc-infra) (optional), for isolated sessions in a container: it finds
+    `nc-work` from [nc-infra](https://github.com/iAmSerathion/nc-infra) (optional), for isolated sessions in a container: it finds
     the session from the terminal's process line and runs the script inside the container against
     the Claude process. Its answer is the same feed JSON, or `{"error": "not-isolated"}`.
   - A non-zero exit or `not-isolated`/`no-session` drops the cached target, so a Claude started
@@ -121,27 +121,28 @@ show your own prompts and files.
     contents.
 - **The feed's `--orch` mode** belongs to nc-orchestrator, which runs this same file with
   `--orch` added. It prints `session`, `flow`, `workflows` and `subagents`; usage.py's docstring
-  has the exact contract. `flow.routes` is `["plain", "reviewed", "orchestrate"]`.
-  - **Derived route** (no status file): `orchestrate` if a Workflow ran, an Agent/Task call had
+  has the exact contract. `flow.routes` is the crew sizes `["one", "pair", "team"]`.
+  - **Derived crew** in `flow.route` (no status file): `team` if a Workflow ran, an Agent/Task call had
     `isolation: "worktree"`, or 2+ Agent/Task calls had `subagent_type` implementer or tester
-    (after the latest prompt); else `reviewed` if a `subagent_type` contains `review`; else `plain`.
+    (after the latest prompt); else `pair` if a `subagent_type` contains `review`; else `one`.
   - **Status file** `~/.claude/nc-orchestrator/<sessionId>.json` counts only when it parses and
     was modified less than 6 hours ago. The feed never writes it.
-  - **Version 2** is written by `nc orchestrator status` from nc-harness (optional).
-    `flow.source` becomes `"plan"`; `flow.route`, `flow.reason` and `flow.state` come from the
-    file; `flow.plan` is `{constraints, phases: [{name, lanes: [{id, tasks}]}], counts: {total,
+  - **Version 3** is written by `nc orchestrator status` from nc-harness (optional).
+    `flow.source` becomes `"plan"`; `flow.route` comes from the file's `crew`, `flow.reason` and
+    `flow.state` from the file; `flow.plan` is `{musts, phases: [{name, lanes: [{id, tasks}]}], counts: {total,
     pass, fail, running, pending, other}}`, validated and capped as the writer's contract says
     (unknown task status becomes `pending`, max 8 phases, 6 lanes, 40 tasks). Each task gets
     `agent`: the newest subagent whose description starts with the task id and a space or `:`,
     as `{id, status, tools, cost_usd, started, ended}`, or null. `flow.steps` is one step per
     phase, and `flow.outcome.status` is `done`/`error` for those states, else `working`.
-    Without a v2 file `flow.reason`, `flow.state` and `flow.plan` are null.
+    Without a v3 file `flow.reason`, `flow.state` and `flow.plan` are null. Other versions
+    are ignored.
   - **Version 1**, written by a skill or hook of your own, stays readable; `flow.source` becomes `"skill"`:
   ```
   { "v": 1,
     "prompt": "first line of the prompt",
-    "routes": ["plain", "reviewed", "orchestrate"],
-    "route": "orchestrate",
+    "routes": ["one", "pair", "team"],
+    "route": "team",
     "steps": [ { "title": "research", "status": "done|running|pending|error", "done": 3, "total": 3 } ],
     "outcome": { "status": "working|done|error", "usd": 0.0 } }
   ```

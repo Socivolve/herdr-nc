@@ -1,6 +1,6 @@
 // Orchestrator card: what the followed Claude Code session is doing, as an animated pipeline
-// (prompt → main → route → branches → stages → outcome), its workflows and its subagents.
-// With a v2 status file it shows the plan (phases, lanes, tasks) and can approve it.
+// (prompt → main → crew → branches → stages → outcome), its workflows and its subagents.
+// With a v3 status file it shows the plan (musts, phases, lanes, tasks) and can approve it.
 // Data: mods/nc-session/usage.py --orch (contract in RECIPE.md). It writes nothing; the only
 // actions are hc send (Approve plan), terminal.peek (a worker) and notify (toasts).
 // All motion is native (.spin, .loop, .frames, .transition); the only timer fetches data.
@@ -27,7 +27,7 @@ const KIND = {
   error: "err", failed: "err", killed: "err", stale: "err",
   idle: "idle", skipped: "skip",
   // plan task statuses
-  pass: "done", review: "run", sent_back: "run", fail: "err", conflict: "err", blocked: "err",
+  pass: "done", review: "run", redo: "run", fail: "err", conflict: "err", blocked: "err",
 }; // anything else (pending, unknown) waits
 const LOOKS = {
   run: { tone: "working", icon: "spin", word: "running" },
@@ -41,7 +41,7 @@ const kind = (s) => KIND[s] ?? "wait";
 // The plan's state: [the look it takes, the word the chip shows].
 const PLAN_STATE = {
   planning: ["running", "planning"], awaiting_approval: ["pending", "awaiting approval"], running: ["running", "running"],
-  final_check: ["running", "final check"], done: ["done", "done"], error: ["error", "error"],
+  closing: ["running", "closing"], done: ["done", "done"], error: ["error", "error"],
 };
 const tasksOf = (plan) => (plan?.phases ?? []).flatMap((p) => (p.lanes ?? []).flatMap((l) => l.tasks ?? []));
 // Theme tokens may already carry alpha (#rrggbbaa); those are used as they are.
@@ -143,7 +143,7 @@ function rail(t, n, i, s, all) {
   }));
 }
 
-// route → branches: a stem, a rail with a drop to every branch, and the taken branch's way
+// crew → branches: a stem, a rail with a drop to every branch, and the taken branch's way
 // back to the centre line. The taken path is drawn in s, the others dashed and "skipped".
 function fork(v, routes, taken, s) {
   const { t, z } = v, n = routes.length, i = routes.indexOf(taken), H = 14 * z;
@@ -401,7 +401,7 @@ export default class Orchestrator extends View {
     });
   }
 
-  // prompt → main → route → fork → stages or plan → outcome
+  // prompt → main → crew → fork → stages or plan → outcome
   flow(v, d) {
     const { t, z, now } = v, f = d.flow ?? {}, s = d.session ?? {}, out = f.outcome ?? {};
     const routes = f.routes ?? [], steps = f.steps ?? [], H = 14 * z;
@@ -433,10 +433,10 @@ export default class Orchestrator extends View {
     ]).w_full().px(10 * z).py(7 * z).gap(3 * z);
 
     const route = node(v, f.route ? "done" : "pending", 7, [h_flex().gap(5 * z).items_center()
-      .child(text(11 * z, t.dim, "route"))
+      .child(text(11 * z, t.dim, "crew"))
       .child(text(12 * z, t.foreground, `→ ${f.route ?? "–"}`))
       .when(f.source === "skill" || f.source === "plan", (el) => el.child(badge(v, f.source)))])
-      .id("orch-route").when(Boolean(f.reason), (el) => el.tooltip(String(f.reason)))
+      .id("orch-crew").when(Boolean(f.reason), (el) => el.tooltip(String(f.reason)))
       .max_w(260 * z).px(10 * z).py(4 * z);
 
     const OL = look(t, ost), plan = f.plan ? tasksOf(f.plan) : null;
@@ -466,13 +466,13 @@ export default class Orchestrator extends View {
     return els;
   }
 
-  // The plan: its state, constraints, Approve, then per phase its lanes side by side (stacked in a
+  // The plan: its state, musts, Approve, then per phase its lanes side by side (stacked in a
   // narrow card), each task a chip. The window draws every task expanded.
   plan(v, f) {
     const { t, z, big } = v, st = PLAN_STATE[f.state] ?? ["pending", f.state ?? "–"];
     const rows = [h_flex().w_full().flex_wrap().gap(5 * z).items_center()
       .child(chip(v, st[0], st[1]))
-      .children((f.plan.constraints ?? []).map((c) => badge(v, c.id, t.muted).id(`con-${c.id}`).tooltip(`${c.id} ${c.text ?? ""}`)))];
+      .children((f.plan.musts ?? []).map((m) => badge(v, m.id, t.muted).id(`must-${m.id}`).tooltip(`${m.id} ${m.text ?? ""}`)))];
     if (f.state === "awaiting_approval" || this.sent) rows.push(this.approveRow(v, f));
     const stack = !big && this.w > 0 && this.w < 420;
     (f.plan.phases ?? []).forEach((ph, i) => {
@@ -514,7 +514,7 @@ export default class Orchestrator extends View {
       .child(icon(v, x.status, 10))
       .child(div().flex_none().text_size(11 * z).font_semibold().text_color(t.foreground).child(String(x.id)))
       .child(text(10.5 * z, t.dim, x.role ?? "").flex_1())
-      .when(x.status === "sent_back", (el) => el.child(div().flex_none().text_size(10 * z).text_color(t.working).child(`↻${x.sendbacks || 1}`)))
+      .when(x.status === "redo", (el) => el.child(div().flex_none().text_size(10 * z).text_color(t.working).child(`↻${x.redos || 1}`)))
       .when(Boolean(x.branch), (el) => el.child(div().flex_none().text_size(10.5 * z).text_color(t.dim).child("⎇")))
       .when(Boolean(x.delegate), (el) => el.child(div().flex_none().text_size(10 * z).font_bold().text_color(t.dim).child("D")))
       .when(Boolean(x.review), (el) => el.child(badge(v, x.review, x.review === "pass" ? t.done : x.review.startsWith("findings") ? t.blocked : t.accent)))
@@ -528,7 +528,7 @@ export default class Orchestrator extends View {
       .child(div().w(50 * z).flex_none().text_size(10 * z).text_color(t.dim).child(k))
       .child(text(10.5 * z, t.muted, val).flex_1())
       .when(Boolean(extra), (el) => el.child(extra));
-    const cs = Object.entries(x.constraints ?? {}), a = x.agent;
+    const ans = Object.entries(x.answers ?? {}), a = x.agent;
     // The worker's terminal, named after the delegate id (hidden when there is none).
     const term = x.delegate ? terminals().find((m) => m.name === x.delegate) : null;
     const peek = term && noDrag(div().id(`peek-${x.id}`).flex_none().px(5).rounded(4).bg(t.raised).text_size(10 * z)
@@ -537,9 +537,9 @@ export default class Orchestrator extends View {
     return [
       x.title && text(11 * z, t.foreground, x.title),
       x.files?.length && row("files", x.files.join(", ")),
-      x.check && row("check", x.check),
+      x.proof && row("proof", x.proof),
       x.after?.length && row("after", x.after.join(", ")),
-      cs.length && h_flex().w_full().flex_wrap().gap(4 * z).children(cs.map(([c, r]) => badge(v, `${c} ${r === "pass" ? "✓" : "✗"}`, r === "pass" ? t.done : t.blocked))),
+      ans.length && h_flex().w_full().flex_wrap().gap(4 * z).children(ans.map(([m, r]) => badge(v, `${m} ${r === "kept" ? "✓" : "✗"}`, r === "kept" ? t.done : t.blocked))),
       x.evidence && row("evidence", x.evidence),
       x.branch && row("branch", `⎇ ${x.branch}`),
       x.delegate && row("delegate", x.delegate, peek),

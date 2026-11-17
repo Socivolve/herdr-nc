@@ -17,18 +17,18 @@ Prints only ids, labels, model ids, counts, statuses, times (epoch ms), tool/ski
 results, scripts or file contents.
 
 Status file (orch mode). If ~/.claude/nc-orchestrator/<sessionId>.json exists, parses and was modified less
-than 6 hours ago, it replaces parts of the derived flow. Version 2 is written by `nc orchestrator status` (nc-harness):
-flow.source becomes "plan", flow.route/reason/state come from the file, flow.plan holds its
-constraints and phases (validated and capped as the writer's contract says; each task gets "agent", the newest
+than 6 hours ago, it replaces parts of the derived flow. Version 3 is written by `nc orchestrator status` (nc-harness):
+flow.source becomes "plan", flow.route comes from the file's crew, flow.reason/state from the file, flow.plan holds its
+musts and phases (validated and capped as the writer's contract says; each task gets "agent", the newest
 subagent whose description starts with "<task id> " or "<task id>:"), flow.steps is one step per phase and
-flow.outcome.status follows the state (done, error, else working). Without a v2 file flow.reason, flow.state
-and flow.plan are null.
+flow.outcome.status follows the state (done, error, else working). Other versions than 3 and 1 are ignored.
+Without a v3 file flow.reason, flow.state and flow.plan are null.
 Version 1, written by a skill or hook of your own: its keys replace the derived flow and flow.source becomes "skill". Every key
 is optional; a key with the wrong type is ignored.
     {"v": 1,
      "prompt": "one line",                       (cut to 100 chars)
-     "routes": ["plain", "reviewed", "orchestrate"],  (max 6 names, 40 chars each)
-     "route": "reviewed",                         (the branch taken)
+     "routes": ["one", "pair", "team"],          (max 6 names, 40 chars each)
+     "route": "pair",                             (the branch taken)
      "steps": [{"title": "research", "status": "done|running|pending|error", "done": 3, "total": 3}],  (max 12)
      "outcome": {"status": "working|done|error", "usd": 1.25}}   (merged over the derived outcome)
 This script never writes that file.
@@ -60,9 +60,9 @@ TOKEN_KEYS = ("input", "output", "cache_read", "cache_write_5m", "cache_write_1h
 EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 STALE_MS = 15 * 60 * 1000  # shortcut: no write for 15 min = stale; a long Bash call or generation can exceed it
 OVERRIDE_MAX_S = 6 * 3600
-ROUTES = ["plain", "reviewed", "orchestrate"]
-TASK_STATUS = ("pending", "running", "review", "sent_back", "pass", "fail", "blocked", "conflict")
-STATES = ("planning", "awaiting_approval", "running", "final_check", "done", "error")
+ROUTES = ["one", "pair", "team"]
+TASK_STATUS = ("pending", "running", "review", "redo", "pass", "fail", "blocked", "conflict")
+STATES = ("planning", "awaiting_approval", "running", "closing", "done", "error")
 NOTE_ID, NOTE_STATUS = re.compile(r"<task-id>(.*?)</task-id>"), re.compile(r"<status>(.*?)</status>")
 UUID = re.compile(r"[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}")
 
@@ -150,14 +150,14 @@ def connector(name):
 
 
 def route_of(uses):
-    """[(tool name, subagent_type, worktree isolation)] after the prompt -> the derived route."""
+    """[(tool name, subagent_type, worktree isolation)] after the prompt -> the derived crew."""
     agents = [((t or "").lower(), wt) for n, t, wt in uses if n in ("Agent", "Task")]
     if (any(n == "Workflow" for n, _, _ in uses) or any(wt for _, wt in agents)
             or sum(t.split(":")[-1] in ("implementer", "tester") for t, _ in agents) >= 2):
-        return "orchestrate"
+        return "team"
     if any("review" in t for t, _ in agents):
-        return "reviewed"
-    return "plain"
+        return "pair"
+    return "one"
 
 
 class Scan:
@@ -563,7 +563,7 @@ def steps_of(w):
 
 
 def plan_of(o, subagents):
-    """v2 status file -> flow.plan, capped as in the writer's contract; subagents are newest first."""
+    """v3 status file -> flow.plan, capped as in the writer's contract; subagents are newest first."""
     def agent(tid):
         a = next((a for a in subagents if a["description"].startswith((tid + " ", tid + ":"))), None)
         return a and {k: a[k] for k in ("id", "status", "tools", "cost_usd", "started", "ended")}
@@ -574,17 +574,17 @@ def plan_of(o, subagents):
         for ln in dicts(p.get("lanes"), 6):
             out = []
             for t in dicts(ln.get("tasks")):
-                tid, sb = cut(t.get("id"), 20), t.get("sendbacks")
+                tid, rd = cut(t.get("id"), 20), t.get("redos")
                 if not tid or len(tasks) >= 40:
                     continue
-                c = t.get("constraints") if isinstance(t.get("constraints"), dict) else {}
+                c = t.get("answers") if isinstance(t.get("answers"), dict) else {}
                 out.append(dict(
                     id=tid, title=cut(t.get("title"), 60), role=cut(t.get("role"), 20),
                     status=t.get("status") if t.get("status") in TASK_STATUS else "pending",
-                    files=strs(t.get("files"), 80, 8), check=cut(t.get("check"), 80), after=strs(t.get("after"), 20, 40),
-                    c=strs(t.get("c"), 20, 12), sendbacks=sb if type(sb) is int and sb >= 0 else 0,
+                    files=strs(t.get("files"), 80, 8), proof=cut(t.get("proof"), 80), after=strs(t.get("after"), 20, 40),
+                    musts=strs(t.get("musts"), 20, 12), redos=rd if type(rd) is int and rd >= 0 else 0,
                     branch=cut(t.get("branch"), 60), delegate=cut(t.get("delegate"), 40), review=cut(t.get("review"), 20),
-                    constraints={k[:20]: v for k, v in list(c.items())[:12] if isinstance(k, str) and v in ("pass", "fail")},
+                    answers={k[:20]: v for k, v in list(c.items())[:12] if isinstance(k, str) and v in ("kept", "broken")},
                     evidence=cut(t.get("evidence"), 100), agent=agent(tid)))
                 tasks.append(out[-1])
             lanes.append(dict(id=cut(ln.get("id"), 20), tasks=out))
@@ -592,25 +592,25 @@ def plan_of(o, subagents):
     n = Counter(t["status"] for t in tasks)
     counts = dict(total=len(tasks), **{k: n[k] for k in ("pass", "fail", "running", "pending")})
     counts["other"] = len(tasks) - sum(n[k] for k in ("pass", "fail", "running", "pending"))
-    return dict(constraints=[dict(id=cut(c.get("id"), 20), text=cut(c.get("text"), 80)) for c in dicts(o.get("constraints"), 12)],
+    return dict(musts=[dict(id=cut(m.get("id"), 20), text=cut(m.get("text"), 80)) for m in dicts(o.get("musts"), 12)],
                 phases=phases, counts=counts)
 
 
 def phase_step(p):
     ts = [t for ln in p["lanes"] for t in ln["tasks"]]
     st = {t["status"] for t in ts}
-    status = ("error" if st & {"fail", "conflict", "blocked"} else "running" if st & {"running", "review", "sent_back"}
+    status = ("error" if st & {"fail", "conflict", "blocked"} else "running" if st & {"running", "review", "redo"}
               else "done" if st == {"pass"} else "pending")
     return dict(title=p["name"] or "", status=status, done=sum(t["status"] == "pass" for t in ts), total=len(ts))
 
 
 def apply_override(sc, flow, path, subagents):
     o = sc.jload(path)
-    if isinstance(o, dict) and o.get("v") == 2:
+    if isinstance(o, dict) and o.get("v") == 3:
         flow.update(source="plan", reason=cut(o.get("reason"), 80), state=o["state"] if o.get("state") in STATES else None,
                     plan=plan_of(o, subagents))
-        if o.get("route") in ROUTES:
-            flow["route"] = o["route"]
+        if o.get("crew") in ROUTES:
+            flow["route"] = o["crew"]
         flow["steps"] = [phase_step(p) for p in flow["plan"]["phases"]]
         flow["outcome"]["status"] = {"done": "done", "error": "error"}.get(flow["state"], "working")
         return
@@ -662,26 +662,26 @@ def selftest():
     assert parts("claude-opus-5-5", u) == [("claude-opus-5-5", u)]
     assert label("claude-opus-5-5") == "Opus 5.5" and label("claude-fable-5") == "Fable 5"
     assert connector("mcp__claude_ai_Google_Docs__search") == "Google Docs"
-    assert route_of([("Agent", "my-plugin:code-reviewer", False)]) == "reviewed"
-    assert route_of([("Bash", None, False)]) == "plain" and route_of([("Agent", "implementer", False)]) == "plain"
-    assert route_of([("Agent", "reviewer", False), ("Workflow", None, False)]) == "orchestrate"
-    assert route_of([("Task", "Explore", True)]) == "orchestrate" and route_of([("Bash", None, True)]) == "plain"
-    assert route_of([("Agent", "implementer", False), ("Task", "tester", False)]) == "orchestrate"
+    assert route_of([("Agent", "my-plugin:code-reviewer", False)]) == "pair"
+    assert route_of([("Bash", None, False)]) == "one" and route_of([("Agent", "implementer", False)]) == "one"
+    assert route_of([("Agent", "reviewer", False), ("Workflow", None, False)]) == "team"
+    assert route_of([("Task", "Explore", True)]) == "team" and route_of([("Bash", None, True)]) == "one"
+    assert route_of([("Agent", "implementer", False), ("Task", "tester", False)]) == "team"
     sc = Scan()
     sc.line({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "w", "name": "Agent", "input": {
         "subagent_type": "implementer", "isolation": "worktree"}}, {"type": "tool_use", "id": "n", "name": "Agent", "input": {}}]}}, "p", True)
     assert sc.worktree == {"w"} and sc.uses["w"][3] == "implementer"
-    many = dict(v=2, constraints=[dict(id="C1", text="t" * 99)] * 20, phases=[dict(name="P" * 50, lanes=[
-        dict(id="A", tasks=[dict(id=f"A{i}", title="x" * 70, status="odd", files=["f" * 90, 3] * 9, sendbacks=-1,
-                                 constraints={"C1": "pass", "C2": "maybe"}, evidence=7) for i in range(30)] + ["junk"])] * 9)] * 9)
+    many = dict(v=3, musts=[dict(id="M1", text="t" * 99)] * 20, phases=[dict(name="P" * 50, lanes=[
+        dict(id="A", tasks=[dict(id=f"A{i}", title="x" * 70, status="odd", files=["f" * 90, 3] * 9, redos=-1,
+                                 answers={"M1": "kept", "M2": "pass"}, evidence=7) for i in range(30)] + ["junk"])] * 9)] * 9)
     pl = plan_of(many, [])
     tk = [t for p in pl["phases"] for ln in p["lanes"] for t in ln["tasks"]]
-    assert len(pl["phases"]) == 8 and len(pl["phases"][0]["lanes"]) == 6 and len(tk) == 40 and len(pl["constraints"]) == 12
+    assert len(pl["phases"]) == 8 and len(pl["phases"][0]["lanes"]) == 6 and len(tk) == 40 and len(pl["musts"]) == 12
     assert pl["counts"] == {"total": 40, "pass": 0, "fail": 0, "running": 0, "pending": 40, "other": 0}
     t = tk[0]
-    assert (t["status"], len(t["title"]), t["files"], t["sendbacks"], t["constraints"], t["evidence"], t["agent"]) == \
-        ("pending", 60, ["f" * 80] * 8, 0, {"C1": "pass"}, None, None), t
-    assert len(pl["phases"][0]["name"]) == 40 and len(pl["constraints"][0]["text"]) == 80
+    assert (t["status"], len(t["title"]), t["files"], t["redos"], t["answers"], t["evidence"], t["agent"]) == \
+        ("pending", 60, ["f" * 80] * 8, 0, {"M1": "kept"}, None, None), t
+    assert len(pl["phases"][0]["name"]) == 40 and len(pl["musts"][0]["text"]) == 80
     with tempfile.TemporaryDirectory() as tmp:
         e2e(tmp)
     print("selftest ok")
@@ -779,7 +779,7 @@ def e2e(tmp):
     assert ss["model"] == "claude-opus-5-5" and ss["label"] == "Opus 5.5" and ss["agents_running"] == 1
     assert ss["tokens"] == r["total"]["tokens"] and abs(ss["usd"] - r["total"]["usd"]) < 1e-3 and ss["elapsed_s"] >= 900
     f = o["flow"]
-    assert (f["source"], f["prompt"], f["route"], f["routes"]) == ("derived", "second prompt", "orchestrate", ROUTES), f
+    assert (f["source"], f["prompt"], f["route"], f["routes"]) == ("derived", "second prompt", "team", ROUTES), f
     assert (f["reason"], f["state"], f["plan"]) == (None, None, None), f
     assert f["steps"] == [dict(title="Research", status="error", done=1, total=2), dict(title="Write", status="running", done=0, total=1)]
     old = one(20) + cost("claude-sonnet-5-5", {"input_tokens": 1, "output_tokens": 7, "cache_read_input_tokens": 1_000_000})
@@ -810,37 +810,40 @@ def e2e(tmp):
     os.utime(f"{base}/nc-orchestrator/sid1.json", (t7h, t7h))
     assert run(base, pid, k["sig"], orch=True, home=home)["flow"]["source"] == "derived"
 
-    # v2 status file (nc orchestrator status): plan, counts, steps per phase, task <-> subagent join; then too old
+    # v3 status file (nc orchestrator status): plan, counts, steps per phase, task <-> subagent join; then too old
     for aid, desc, age in (("s2", "A1 write interface", 30), ("s3", "A1: retry", 20), ("s4", "A10 other", 10)):
         put(f"{sd}/subagents/agent-{aid}.meta.json", [{"agentType": "implementer", "description": desc, "finished": True}])
         os.utime(f"{sd}/subagents/agent-{aid}.meta.json", (time.time() - age, time.time() - age))
     task = lambda i, st, **kw: dict(id=i, title="t " + i, role="implementer", status=st, **kw)
-    v2 = {"v": 2, "updated": now, "route": "orchestrate", "reason": "r" * 90, "state": "running",
-          "constraints": [{"id": "C1", "text": "no new deps"}, {"id": 5}],
+    v3 = {"v": 3, "updated": now, "crew": "team", "reason": "r" * 90, "state": "running",
+          "musts": [{"id": "M1", "text": "no new deps"}, {"id": 5}],
           "phases": [{"name": "Build", "lanes": [
-                         {"id": "A", "tasks": [task("A1", "pass", branch="b1", review="pass", constraints={"C1": "pass"},
-                                                    files=["a.py"], c=["C1"], sendbacks=1)]},
-                         {"id": "B", "tasks": [task("B1", "running"), task("A10", "sent_back")]}]},
+                         {"id": "A", "tasks": [task("A1", "pass", branch="b1", review="pass", answers={"M1": "kept"},
+                                                    files=["a.py"], musts=["M1"], redos=1, proof="make test")]},
+                         {"id": "B", "tasks": [task("B1", "running"), task("A10", "redo")]}]},
                      {"name": "Check", "lanes": [{"id": "C", "tasks": [task("C1", "pending", after=["A1", "B1"])]}]},
                      {"name": "Ship", "lanes": [{"id": "D", "tasks": [task("D1", "pass"), task("D2", "conflict")]}]}]}
-    put(f"{base}/nc-orchestrator/sid1.json", [v2])
+    put(f"{base}/nc-orchestrator/sid1.json", [v3])
     v = run(base, pid, orch=True, home=home)["flow"]
-    assert (v["source"], v["route"], v["routes"], v["reason"], v["state"]) == ("plan", "orchestrate", ROUTES, "r" * 80, "running"), v
+    assert (v["source"], v["route"], v["routes"], v["reason"], v["state"]) == ("plan", "team", ROUTES, "r" * 80, "running"), v
     assert v["steps"] == [dict(title="Build", status="running", done=1, total=3), dict(title="Check", status="pending", done=0, total=1),
                           dict(title="Ship", status="error", done=1, total=2)], v["steps"]
     assert v["outcome"]["status"] == "working" and v["outcome"]["usd"] == f["outcome"]["usd"]
     assert v["plan"]["counts"] == {"total": 6, "pass": 2, "fail": 0, "running": 1, "pending": 1, "other": 2}, v["plan"]["counts"]
-    assert v["plan"]["constraints"] == [dict(id="C1", text="no new deps"), dict(id=None, text=None)]
+    assert v["plan"]["musts"] == [dict(id="M1", text="no new deps"), dict(id=None, text=None)]
     lb = v["plan"]["phases"][0]["lanes"]
     t1 = lb[0]["tasks"][0]
-    assert (t1["agent"]["id"], t1["agent"]["status"], t1["branch"], t1["sendbacks"], t1["check"], t1["after"]) == \
-        ("s3", "done", "b1", 1, None, []), t1
+    assert (t1["agent"]["id"], t1["agent"]["status"], t1["branch"], t1["redos"], t1["proof"], t1["after"], t1["musts"], t1["answers"]) == \
+        ("s3", "done", "b1", 1, "make test", [], ["M1"], {"M1": "kept"}), t1
     assert set(t1["agent"]) == {"id", "status", "tools", "cost_usd", "started", "ended"}
     assert lb[1]["tasks"][1]["agent"]["id"] == "s4" and lb[1]["tasks"][0]["agent"] is None
     for state, oc in (("done", "done"), ("error", "error"), ("bogus", "working")):
-        put(f"{base}/nc-orchestrator/sid1.json", [dict(v2, state=state, route="nope")])
+        put(f"{base}/nc-orchestrator/sid1.json", [dict(v3, state=state, crew="nope")])
         v = run(base, pid, orch=True, home=home)["flow"]
-        assert (v["outcome"]["status"], v["state"], v["route"]) == (oc, state if state != "bogus" else None, "orchestrate"), v
+        assert (v["outcome"]["status"], v["state"], v["route"]) == (oc, state if state != "bogus" else None, "team"), v
+    # a file with another version is ignored: the derived flow shows
+    put(f"{base}/nc-orchestrator/sid1.json", [dict(v3, v=2)])
+    assert run(base, pid, orch=True, home=home)["flow"]["source"] == "derived"
     os.utime(f"{base}/nc-orchestrator/sid1.json", (t7h, t7h))
     v = run(base, pid, orch=True, home=home)["flow"]
     assert (v["source"], v["plan"], v["reason"], v["state"]) == ("derived", None, None, None), v

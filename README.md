@@ -22,16 +22,16 @@ Optional:
 - Remote machines added with `hc machine add`: `nc-spaces` groups their spaces, and
   `nc-session`/`nc-orchestrator` follow Claude Code sessions there (they need
   `/usr/bin/python3` on that machine).
-- `nc` from [nc-harness](https://github.com/Socivolve/nc-harness) and `nc-work` from
-  [nc-infra](https://github.com/Socivolve/nc-infra) (both published soon) for the extra entries in `programs.json`
-  and the orchestrator's v2 plan view. Without them those menu entries show as not installed;
+- `nc` from [nc-harness](https://github.com/iAmSerathion/nc-harness) and `nc-work` from
+  [nc-infra](https://github.com/iAmSerathion/nc-infra) for the extra entries in `programs.json`
+  and the orchestrator's v3 plan view. Without them those menu entries show as not installed;
   everything else works.
 - `nc-orchestrator` needs `nc-session` (it runs `nc-session/usage.py --orch`).
 
 ## Install
 
 ```sh
-git clone https://github.com/Socivolve/herdr-nc
+git clone https://github.com/iAmSerathion/herdr-nc
 cd herdr-nc
 scripts/check              # JSON, names, theme contrast, herdr-app check for every mod
 scripts/deploy --dry-run   # shows what would be copied into ~/.config/herdr-app
@@ -81,8 +81,8 @@ estimate at API list price (prices in `usage.py`, as of 2026-11-03), not a subsc
 
 **Own orchestrator skill:** If a skill writes `~/.claude/nc-orchestrator/<sessionId>.json`
 (`"v": 1`, optional `prompt`, `routes`, `route`, `steps`, `outcome`), that replaces the
-derived flow in the orchestrator diagram. The nc-harness orchestrator writes `"v": 2` there
-(`nc orchestrator status`): the card then shows its plan (phases, lanes, tasks), toasts on
+derived flow in the orchestrator diagram. The nc-harness orchestrator writes `"v": 3` there
+(`nc orchestrator status`): the card then shows its crew and plan (musts, phases, lanes, tasks), toasts on
 failed tasks and state changes, and offers "Approve plan" (`hc send <agent> ok` once `hc get`
 says idle or done). Format: `mods/nc-orchestrator/RECIPE.md`.
 
