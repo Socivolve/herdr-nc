@@ -1,0 +1,101 @@
+#!/bin/bash
+# Quality gate for this repo. scripts/deploy runs it first; run it after every change too.
+set -uo pipefail
+. "$(dirname "$0")/lib.sh"
+cd "$REPO" || exit 1
+
+fail=0
+bad()  { echo "FAIL $*"; fail=1; }
+warn() { echo "warn $*"; }
+
+command -v jq >/dev/null || { echo "FAIL jq is missing (brew install jq)"; exit 1; }
+
+# 1. Every JSON file of ours parses.
+while IFS= read -r f; do
+  jq empty "$f" >/dev/null 2>&1 || bad "$f is not valid JSON"
+done < <(find . -name '*.json' ! -name jsconfig.json \
+           ! -path './.git/*' ! -path './local/*')
+
+# 2. Layouts and themes are named nc or nc-* (never Herdr's or anyone else's names).
+for f in layouts/* themes/*; do
+  [ -f "$f" ] || continue
+  case "$(basename "$f")" in
+    nc.*|nc-*) ;;
+    *) bad "$f: name our layouts and themes nc or nc-* (Herdr replaces its own names on every start)" ;;
+  esac
+done
+
+# 2b. Themes stay readable (contrast of the colour pairs that matter).
+for f in themes/*.json; do
+  [ -f "$f" ] || continue
+  python3 "$REPO/scripts/contrast.py" "$f" || fail=1
+done
+
+# 3. Layouts: unique ids, only mods that exist here or are shipped by Herdr.
+# Is $1 a mod Herdr ships? 0 yes, 1 no, 2 unknown. Looks in local/upstream (scripts/fetch-upstream),
+# else in the Herdr home, where Herdr writes its own mods on every start.
+herdr_mod() {
+  local d seen=2
+  for d in local/upstream/herdr-app-*/mods; do
+    [ -d "$d" ] || continue
+    seen=1; [ -d "$d/$1" ] && return 0
+  done
+  if [ "$seen" = 2 ] && [ -d "$TARGET/mods" ]; then seen=1; [ -d "$TARGET/mods/$1" ] && return 0; fi
+  return "$seen"
+}
+for f in layouts/*.json; do
+  [ -f "$f" ] || continue
+  dup="$(jq -r '[.. | objects | select(has("id") and (has("type") or has("content"))) | .id] | group_by(.) | map(select(length > 1) | .[0]) | join(", ")' "$f" 2>/dev/null)"
+  [ -n "$dup" ] && bad "$f: duplicate node ids: $dup"
+  while IFS= read -r m; do
+    [ -d "mods/$m" ] && continue
+    herdr_mod "$m"
+    case $? in
+      0) continue ;;
+      2) warn "$f uses mod \"$m\": not verified (no Herdr home and no local/upstream; see scripts/fetch-upstream)"; continue ;;
+    esac
+    bad "$f uses mod \"$m\", which is neither in mods/ nor shipped by Herdr"
+  done < <(jq -r '[.. | objects | (.mod?, .toast?, .terminal_menu?, (.header? | strings | select(. != "tabs"))) | strings] | unique | .[]' "$f" 2>/dev/null)
+done
+
+# 4. Mods: nc- prefix, the two required files, place none, Herdr's own check, house rules.
+for d in mods/*/; do
+  [ -d "$d" ] || continue
+  m="$(basename "$d")"
+  case "$m" in
+    nc-*) ;;
+    *) bad "mods/$m: name our mods nc-* (keeps clear of Herdr's and other people's mods)"; continue ;;
+  esac
+  [ -f "$d/main.js" ] || bad "mods/$m: no main.js"
+  if [ -f "$d/mod.json" ]; then
+    [ "$(jq -r '.place // empty' "$d/mod.json" 2>/dev/null)" = none ] ||
+      bad "mods/$m/mod.json: set \"place\": \"none\" (otherwise Herdr docks it into the shown layout when it first sees it)"
+  else
+    bad "mods/$m: no mod.json"
+  fi
+  if command -v herdr-app >/dev/null; then
+    out="$(herdr-app check "$d" 2>&1)" || bad "mods/$m: herdr-app check: $out"
+  else
+    warn "herdr-app not found: skipped herdr-app check for mods/$m"
+  fi
+  # Python helpers with a --selftest run it with the interpreter the mods use (-B: no __pycache__ in the mod).
+  for py in "$d"*.py; do [ -f "$py" ] && grep -q -- --selftest "$py" && { /usr/bin/python3 -I -B "$py" --selftest >/dev/null || bad "$py --selftest failed"; }; done
+  grep -rnE --include='*.js' --include='*.mjs' 'set(Timeout|Interval)\(' "$d" &&
+    bad "mods/$m: Herdr has no setTimeout/setInterval (use cx.timer)"
+  grep -rnE --include='*.js' --include='*.mjs' '#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?\b' "$d" &&
+    warn "mods/$m: hex colours above; use theme() tokens so themes carry through"
+  grep -rn --include='*.js' --include='*.mjs' '"git"' "$d" | grep -v -- '--no-optional-locks' &&
+    warn "mods/$m: git calls above without --no-optional-locks can block your own commits"
+done
+
+# 5. Nothing private or secret in what goes to GitHub.
+U="/Users"; H="/home"
+grep -rIn --exclude-dir=.git --exclude-dir=local -e "$U/" -e "$H/" . &&
+  bad "absolute home paths above: use ~ in docs, keep machine paths in local/"
+grep -rIEn --exclude-dir=.git --exclude-dir=local \
+  -e 'gh[pousr]_[A-Za-z0-9]{30,}' -e 'sk-[A-Za-z0-9_-]{20,}' -e 'AKIA[0-9A-Z]{16}' \
+  -e '-----BEGIN [A-Z ]*PRIVATE KEY-----' . &&
+  bad "possible secrets above"
+
+if [ "$fail" = 0 ]; then echo "check passed"; fi
+exit "$fail"

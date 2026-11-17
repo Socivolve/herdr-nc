@@ -1,0 +1,16 @@
+# Herdr writes these into every mod folder it loads or checks
+mods/*/gpui-kit.d.ts
+mods/*/jsconfig.json
+# Herdr's error, reset and recovery files
+*.error
+*.reset-*
+*.old-*
+*.corrupt-*
+# Click state (sizes, hidden panels, theme picks): changes constantly, never edit
+layouts/.state/
+# Screenshots show whatever is on screen (private data, terminal text)
+herdr-shot*.png
+# Machine-specific values, deploy records, backups, scripts/fetch-upstream downloads
+local/
+.DS_Store
+__pycache__/

@@ -1,0 +1,44 @@
+#!/bin/bash
+# Take changes Herdr made in its home back into this repo: keys.json, settings.json,
+# programs.json and layouts/themes this repo deployed, plus new layouts/themes named
+# nc* (e.g. made with "Duplicate layout" in Herdr). Never touches mods: edit those here.
+# Review the result with git diff before committing.
+set -euo pipefail
+. "$(dirname "$0")/lib.sh"
+cd "$REPO"
+
+[ -d "$TARGET" ] || { echo "No Herdr home at $TARGET." >&2; exit 1; }
+
+pulled=0
+while IFS= read -r p; do
+  [ -f "$TARGET/$p" ] || continue
+  cmp -s "$TARGET/$p" "$p" 2>/dev/null && continue
+  # A file that exists here but was never deployed is not ours in the home yet
+  # (e.g. another layout's keys.json): pulling it would overwrite the repo's version.
+  rec="$(recorded_hash "$p")"
+  # Deployed once, gone from the repo now: it was deleted here on purpose.
+  if [ ! -f "$p" ] && [ -n "$rec" ]; then echo "skipped $p: deleted in the repo"; continue; fi
+  if [ -f "$p" ] && [ -z "$rec" ]; then
+    echo "skipped $p: never deployed from this repo, so the home's copy isn't ours"
+    continue
+  fi
+  # Herdr didn't touch it since the last deploy: only the repo changed, deploy copies it.
+  if [ -n "$rec" ] && [ "$(hash_of "$TARGET/$p")" = "$rec" ]; then continue; fi
+  # Changed here too since the last deploy: pulling would throw away that edit.
+  if [ -f "$p" ] && [ "$(hash_of "$p")" != "$rec" ]; then
+    echo "skipped $p: changed both here and in Herdr since the last deploy. Merge by hand:"
+    diff -u "$p" "$TARGET/$p" | sed -n '3,14p' | sed 's/^/    /' || true
+    continue
+  fi
+  mkdir -p "$(dirname "$p")"
+  cp "$TARGET/$p" "$p"
+  set_recorded "$p" "$(hash_of "$p")"
+  echo "pulled  $p"; pulled=1
+done < <(
+  {
+    managed_files | grep -v '^mods/' || true
+    (cd "$TARGET" && for f in layouts/nc*.json themes/nc*.json; do if [ -f "$f" ]; then echo "$f"; fi; done)
+  } | LC_ALL=C sort -u
+)
+
+if [ "$pulled" = 1 ]; then git -C "$REPO" status --short 2>/dev/null || true; else echo "Nothing to pull."; fi

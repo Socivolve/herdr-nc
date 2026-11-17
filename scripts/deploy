@@ -1,0 +1,154 @@
+#!/bin/bash
+# Copy this repo's layouts, themes, nc-* mods, keys.json and settings.json into the
+# Herdr home (~/.config/herdr-app, or $HERDR_APP_HOME). Herdr applies them live.
+#
+# Never loses anything:
+# - A file in the home that never came from this repo (e.g. another setup's keys.json)
+#   is left alone and reported. --force takes it over, with a backup.
+# - A file this repo deployed that was changed in the home since (Herdr's Settings
+#   screen, a layout command) stops the whole deploy. scripts/pull takes the change
+#   into the repo; --force overwrites it, with a backup.
+#
+#   scripts/deploy             check, then copy what changed
+#   scripts/deploy --dry-run   only show what would happen
+#   scripts/deploy --force     also overwrite the files above (old ones go to local/backup/)
+set -euo pipefail
+. "$(dirname "$0")/lib.sh"
+
+DRY=0; FORCE=0
+for a in "$@"; do
+  case "$a" in
+    --dry-run) DRY=1 ;;
+    --force) FORCE=1 ;;
+    *) echo "usage: scripts/deploy [--dry-run] [--force]" >&2; exit 2 ;;
+  esac
+done
+
+[ -d "$TARGET" ] || { echo "No Herdr home at $TARGET (start Herdr once, or set HERDR_APP_HOME)." >&2; exit 1; }
+"$REPO/scripts/check" || { echo "Not deployed: fix what scripts/check reports." >&2; exit 1; }
+
+WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
+managed_files > "$WORK/all"
+for f in copy drift foreign remove kept; do : > "$WORK/$f"; done
+
+while IFS= read -r p; do
+  dst="$TARGET/$p"
+  if [ ! -e "$dst" ]; then echo "$p" >> "$WORK/copy"; continue; fi
+  cmp -s "$REPO/$p" "$dst" && continue
+  rec="$(recorded_hash "$p")"
+  if [ -n "$rec" ]; then
+    if [ "$rec" = "$(hash_of "$dst")" ]; then echo "$p" >> "$WORK/copy"; else echo "$p" >> "$WORK/drift"; fi
+  elif ours_by_name "$p"; then
+    # shortcut: without a record (local/ lost, fresh clone) a Herdr-side edit of an nc file
+    # can't be told apart and is overwritten; keep local/ to stay protected.
+    echo "$p" >> "$WORK/copy"
+  else
+    echo "$p" >> "$WORK/foreign"
+  fi
+done < "$WORK/all"
+
+# Files we deployed earlier that left the repo. Top-level files (keys.json, settings.json,
+# programs.json) are never removed from the home: Herdr would fall back to its defaults.
+if [ -f "$STATE" ]; then
+  while IFS=$'\t' read -r h p; do
+    case "$p" in */*) ;; *) continue ;; esac
+    grep -Fxq -- "$p" "$WORK/all" && continue
+    [ -e "$TARGET/$p" ] || continue
+    if [ "$(hash_of "$TARGET/$p")" = "$h" ]; then
+      echo "$p" >> "$WORK/remove"
+    else
+      echo "kept $p: it left the repo but was changed in the home (delete it there by hand)"
+      printf '%s\t%s\n' "$h" "$p" >> "$WORK/kept"   # keeps pull from bringing it back
+    fi
+  done < "$STATE"
+fi
+
+show_diff() { diff -u "$TARGET/$1" "$REPO/$1" | sed -n '3,14p' | sed 's/^/      /' || true; }
+
+if [ -s "$WORK/foreign" ] && [ "$FORCE" = 0 ]; then
+  echo "Left alone (in $TARGET, but not from this repo; --force takes them over):"
+  sed 's/^/  /' "$WORK/foreign"
+fi
+if [ -s "$WORK/drift" ]; then
+  echo "Changed in $TARGET since the last deploy:"
+  while IFS= read -r p; do echo "  $p"; show_diff "$p"; done < "$WORK/drift"
+  if [ "$FORCE" = 0 ]; then
+    if [ "$DRY" = 1 ]; then echo "A deploy would stop here and copy nothing."; else echo "Nothing copied."; fi
+    echo "Take those changes into the repo with scripts/pull, or overwrite them with"
+    echo "scripts/deploy --force (the old files are backed up)."
+    exit 1
+  fi
+fi
+
+if [ "$FORCE" = 1 ]; then cat "$WORK/drift" "$WORK/foreign" > "$WORK/forced"; else : > "$WORK/forced"; fi
+
+if [ "$DRY" = 1 ]; then
+  echo "Target: $TARGET"
+  sed 's/^/  would copy      /' "$WORK/copy"
+  sed 's/^/  would overwrite /' "$WORK/forced"
+  sed 's/^/  would remove    /' "$WORK/remove"
+  [ -s "$WORK/copy" ] || [ -s "$WORK/forced" ] || [ -s "$WORK/remove" ] || echo "  nothing to do"
+  exit 0
+fi
+
+if [ -s "$WORK/forced" ]; then
+  BACKUP="$REPO/local/backup/$(date +%Y%m%d-%H%M%S)"
+  while IFS= read -r p; do
+    mkdir -p "$BACKUP/$(dirname "$p")"; cp -p "$TARGET/$p" "$BACKUP/$p"
+  done < "$WORK/forced"
+  echo "Backed up the overwritten files to ${BACKUP#"$REPO"/}"
+  cat "$WORK/forced" >> "$WORK/copy"
+fi
+
+# Order matters, Herdr applies every file live: a mod's mod.json ("place": "none") before
+# its code, mods before the themes and layouts that use them, keys and settings last.
+{
+  grep    '^mods/.*/mod\.json$' "$WORK/copy" || true
+  grep    '^mods/' "$WORK/copy" | grep -v '/mod\.json$' || true
+  grep    '^themes/' "$WORK/copy" || true
+  grep    '^layouts/' "$WORK/copy" || true
+  grep -v -e '^mods/' -e '^themes/' -e '^layouts/' "$WORK/copy" || true
+} > "$WORK/ordered"
+
+while IFS= read -r p; do
+  dst="$TARGET/$p"; dir="$(dirname "$dst")"
+  mkdir -p "$dir"
+  # Write next to the target, then rename: Herdr never reads a half-written file
+  # (hidden files are ignored by its watcher).
+  tmp="$dir/.$(basename "$dst").nc-tmp"
+  cp "$REPO/$p" "$tmp"; mv -f "$tmp" "$dst"
+  echo "copied  $p"
+done < "$WORK/ordered"
+
+while IFS= read -r p; do
+  rm -f "$TARGET/$p"; echo "removed $p"
+done < "$WORK/remove"
+# Tidy the mod folders that lost files: whole mods gone from the repo lose Herdr's
+# generated files too, and empty folders go.
+{ grep '^mods/' "$WORK/remove" || true; } | cut -d/ -f1-2 | sort -u | while IFS= read -r m; do
+  [ -d "$TARGET/$m" ] || continue
+  if [ ! -d "$REPO/$m" ]; then rm -f "$TARGET/$m/gpui-kit.d.ts" "$TARGET/$m/jsconfig.json" "$TARGET/$m/.DS_Store"; fi
+  find "$TARGET/$m" -depth -type d -empty -exec rmdir {} \;
+done
+
+# Record what is ours in the home now: what was copied, what had a record, nc files.
+# A file that merely matches by chance (e.g. Herdr's default keys.json) stays foreign.
+mkdir -p "$(dirname "$STATE")"
+while IFS= read -r p; do
+  [ -f "$TARGET/$p" ] || continue
+  if grep -Fxq -- "$p" "$WORK/ordered" || [ -n "$(recorded_hash "$p")" ] || ours_by_name "$p"; then
+    printf '%s\t%s\n' "$(hash_of "$TARGET/$p")" "$p"
+  fi
+done < "$WORK/all" > "$STATE.tmp"
+cat "$WORK/kept" >> "$STATE.tmp"
+mv -f "$STATE.tmp" "$STATE"
+
+[ -s "$WORK/ordered" ] || [ -s "$WORK/remove" ] || echo "Already up to date."
+
+# Did Herdr accept it? Only answers when a window runs on this home.
+if command -v herdr-app >/dev/null && status="$(HERDR_APP_HOME="$TARGET" herdr-app status 2>/dev/null)"; then
+  sleep 1.5
+  status="$(HERDR_APP_HOME="$TARGET" herdr-app status 2>/dev/null || echo "$status")"
+  echo "Herdr: layout $(echo "$status" | jq -r .layout), errors $(echo "$status" | jq -c .errors)"
+fi
+ls "$TARGET"/*.error "$TARGET"/layouts/*.error 2>/dev/null | sed 's/^/Herdr refused a file, see: /' || true

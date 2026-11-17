@@ -1,0 +1,44 @@
+{
+  "programs": {
+    "nc-claude": {
+      "name": "Claude (isolated)",
+      "icon": "icons/claude.svg",
+      "run": ["nc-work", "here"],
+      "tint": false,
+      "tile": "#1c1d21",
+      "color": "#ffffff"
+    },
+    "nc-claude-direct": {
+      "name": "Claude (Harness)",
+      "icon": "icons/claude.svg",
+      "run": ["nc", "claude"],
+      "tint": false,
+      "tile": "#1c1d21",
+      "color": "#ffffff"
+    },
+    "nc-opencode": {
+      "name": "OpenCode (isolated)",
+      "icon": "icons/opencode.svg",
+      "run": ["nc-work", "here", "--runtime", "opencode"],
+      "tint": true,
+      "tile": "#1c1d21",
+      "color": "#ffffff"
+    },
+    "nc-opencode-direct": {
+      "name": "OpenCode (Harness)",
+      "icon": "icons/opencode.svg",
+      "run": ["nc", "opencode"],
+      "tint": true,
+      "tile": "#1c1d21",
+      "color": "#ffffff"
+    },
+    "nc-broker": {
+      "name": "Broker",
+      "icon": "icons/docker.svg",
+      "run": ["nc-work", "broker"],
+      "tint": true,
+      "tile": "#1c1d21",
+      "color": "#ffffff"
+    }
+  }
+}

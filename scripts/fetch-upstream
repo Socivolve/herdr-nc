@@ -1,0 +1,32 @@
+#!/bin/bash
+# Download Herdr's shipped defaults (mods, layouts, keys, themes, AGENTS.md, herdr.d.ts) and
+# its LICENSE for one release into local/upstream/herdr-app-<version>/ (gitignored). Only for
+# looking things up, diffing and merging Herdr's fixes into copied mods; never deployed.
+#
+#   scripts/fetch-upstream 0.1.16      (version: see herdr-app --version)
+set -euo pipefail
+. "$(dirname "$0")/lib.sh"
+
+v="${1:-}"
+if [ "$#" -ne 1 ] || ! [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "usage: scripts/fetch-upstream <version>   e.g. scripts/fetch-upstream 0.1.16" >&2
+  exit 2
+fi
+
+dst="$REPO/local/upstream/herdr-app-$v"
+if [ -d "$dst" ]; then echo "Already there: local/upstream/herdr-app-$v"; exit 0; fi
+command -v curl >/dev/null || { echo "curl is missing." >&2; exit 1; }
+
+url="https://github.com/herdrdev/herdr-app/archive/refs/tags/v$v.tar.gz"
+tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+curl -fsSL "$url" -o "$tmp/src.tar.gz" ||
+  { echo "Could not download $url (offline, or no tag v$v)." >&2; exit 1; }
+mkdir "$tmp/x"; tar -xzf "$tmp/src.tar.gz" -C "$tmp/x" || { echo "Could not unpack $url." >&2; exit 1; }
+src="$(find "$tmp/x" -mindepth 1 -maxdepth 1 -type d | head -1)"
+[ -d "$src/defaults" ] && [ -f "$src/LICENSE" ] ||
+  { echo "No defaults/ or LICENSE in the v$v tarball: Herdr's repo layout changed, adapt this script." >&2; exit 1; }
+
+mkdir "$tmp/out"; cp -R "$src/defaults/." "$tmp/out/"; cp "$src/LICENSE" "$tmp/out/"
+mkdir -p "$(dirname "$dst")"
+mv "$tmp/out" "$dst"   # one rename: a half-done download never looks finished
+echo "Fetched Herdr $v into local/upstream/herdr-app-$v"

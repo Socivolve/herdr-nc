@@ -1,0 +1,413 @@
+{
+  "id": "root",
+  "cloned_from": {
+    "name": "main",
+    "version": "0.1.15"
+  },
+  "theme": {
+    "light": "nc-light",
+    "dark": "nc-dark"
+  },
+  "font": "JetBrains Mono",
+  "font_size": 14,
+  "ui_font": "Inter",
+  "type": "row",
+  "titlebar": "none",
+  "traffic_lights": [
+    -200,
+    -200
+  ],
+  "background": "canvas",
+  "terminal_padding": [
+    14,
+    12
+  ],
+  "divider": {
+    "width": 1,
+    "color": "border"
+  },
+  "children": [
+    {
+      "id": "sidebar",
+      "type": "column",
+      "size": {
+        "px": 400
+      },
+      "min": 250,
+      "max": 480,
+      "background": "chrome",
+      "resizable": false,
+      "children": [
+        {
+          "id": "brand",
+          "type": "block",
+          "size": {
+            "px": 46
+          },
+          "window_drag": true,
+          "content": {
+            "mod": "nc-workspace-chrome"
+          }
+        },
+        {
+          "id": "sidebar-lists",
+          "type": "column",
+          "padding": [
+            0,
+            8
+          ],
+          "divider": {
+            "width": 8,
+            "color": "chrome"
+          },
+          "resizable": true,
+          "children": [
+            {
+              "id": "spaces",
+              "type": "block",
+              "size": {
+                "weight": 1.4
+              },
+              "min": 32,
+              "radius": 10,
+              "border": {
+                "width": 1,
+                "color": "border"
+              },
+              "content": {
+                "mod": "nc-spaces",
+                "props": {
+                  "card": "spaces"
+                }
+              }
+            },
+            {
+              "id": "agents",
+              "type": "block",
+              "size": {
+                "weight": 0.9
+              },
+              "min": 34,
+              "radius": 10,
+              "border": {
+                "width": 1,
+                "color": "border"
+              },
+              "content": {
+                "mod": "nc-agents",
+                "props": {
+                  "card": "agents"
+                }
+              }
+            },
+            {
+              "id": "dirs",
+              "type": "block",
+              "size": {
+                "weight": 1.05
+              },
+              "min": 30,
+              "radius": 10,
+              "border": {
+                "width": 1,
+                "color": "border"
+              },
+              "content": {
+                "mod": "nc-folders",
+                "props": {
+                  "card": "dirs"
+                }
+              }
+            },
+            {
+              "id": "git",
+              "type": "block",
+              "size": {
+                "weight": 0.6
+              },
+              "min": 30,
+              "radius": 10,
+              "border": {
+                "width": 1,
+                "color": "border"
+              },
+              "content": {
+                "mod": "nc-git",
+                "props": {
+                  "card": "git"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "sidebar-footer",
+          "type": "block",
+          "size": {
+            "px": 69
+          },
+          "content": {
+            "mod": "workspace-chrome",
+            "props": {
+              "footer": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "work",
+      "type": "column",
+      "resizable": false,
+      "children": [
+        {
+          "id": "tabs",
+          "type": "block",
+          "size": {
+            "px": 42
+          },
+          "window_drag": true,
+          "content": {
+            "mod": "tabs"
+          }
+        },
+        {
+          "id": "work-body",
+          "type": "row",
+          "padding": 8,
+          "gap": 8,
+          "children": [
+            {
+              "id": "main",
+              "type": "block",
+              "content": {
+                "tab": "active",
+                "pane": {
+                  "gap": 8,
+                  "radius": 10,
+                  "background": "background",
+                  "lone": true,
+                  "border": {
+                    "width": 1,
+                    "color": "border"
+                  },
+                  "focus": {
+                    "width": 1,
+                    "color": "accent"
+                  },
+                  "header": {
+                    "content": {
+                      "mod": "pane"
+                    },
+                    "height": 30,
+                    "position": "top",
+                    "reveal": "always"
+                  }
+                }
+              }
+            },
+            {
+              "id": "panel",
+              "type": "column",
+              "hidden": true,
+              "size": {
+                "px": 368
+              },
+              "min": 280,
+              "max": 900,
+              "children": [
+                {
+                  "id": "panel-body",
+                  "type": "stack",
+                  "active": "files",
+                  "children": [
+                    {
+                      "id": "files",
+                      "type": "block",
+                      "content": {
+                        "mod": "files"
+                      }
+                    },
+                    {
+                      "id": "changes",
+                      "type": "block",
+                      "content": {
+                        "mod": "changes"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "rail",
+              "type": "column",
+              "size": {
+                "px": 420
+              },
+              "min": 300,
+              "max": 560,
+              "divider": {
+                "width": 8,
+                "color": "canvas"
+              },
+              "resizable": true,
+              "children": [
+                {
+                  "id": "rail-orchestrator",
+                  "type": "block",
+                  "size": {
+                    "weight": 1.6
+                  },
+                  "min": 120,
+                  "radius": 10,
+                  "border": {
+                    "width": 1,
+                    "color": "border"
+                  },
+                  "background": "chrome",
+                  "content": {
+                    "mod": "nc-orchestrator",
+                    "props": {
+                      "card": "rail-orchestrator"
+                    }
+                  }
+                },
+                {
+                  "id": "rail-usage",
+                  "type": "block",
+                  "size": {
+                    "weight": 0.9
+                  },
+                  "min": 90,
+                  "radius": 10,
+                  "border": {
+                    "width": 1,
+                    "color": "border"
+                  },
+                  "background": "chrome",
+                  "content": {
+                    "mod": "nc-session",
+                    "props": {
+                      "view": "usage",
+                      "card": "rail-usage"
+                    }
+                  }
+                },
+                {
+                  "id": "rail-used",
+                  "type": "block",
+                  "size": {
+                    "weight": 0.8
+                  },
+                  "min": 90,
+                  "radius": 10,
+                  "border": {
+                    "width": 1,
+                    "color": "border"
+                  },
+                  "background": "chrome",
+                  "content": {
+                    "mod": "nc-session",
+                    "props": {
+                      "view": "used",
+                      "card": "rail-used"
+                    }
+                  }
+                },
+                {
+                  "id": "rail-servers",
+                  "type": "block",
+                  "size": {
+                    "weight": 0.5
+                  },
+                  "min": 60,
+                  "radius": 10,
+                  "border": {
+                    "width": 1,
+                    "color": "border"
+                  },
+                  "background": "chrome",
+                  "content": {
+                    "mod": "nc-servers",
+                    "props": {
+                      "card": "rail-servers"
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "cards",
+          "type": "block",
+          "size": {
+            "px": 30
+          },
+          "content": {
+            "mod": "nc-cards",
+            "props": {
+              "columns": [
+                {
+                  "id": "sidebar",
+                  "side": "left",
+                  "cards": [
+                    [
+                      "spaces",
+                      "Spaces"
+                    ],
+                    [
+                      "agents",
+                      "Agents"
+                    ],
+                    [
+                      "dirs",
+                      "Folders"
+                    ],
+                    [
+                      "git",
+                      "Git"
+                    ]
+                  ]
+                },
+                {
+                  "id": "rail",
+                  "side": "right",
+                  "cards": [
+                    [
+                      "rail-orchestrator",
+                      "Orchestrator"
+                    ],
+                    [
+                      "rail-usage",
+                      "Usage"
+                    ],
+                    [
+                      "rail-used",
+                      "Used"
+                    ],
+                    [
+                      "rail-servers",
+                      "Servers"
+                    ]
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "status",
+          "type": "block",
+          "size": {
+            "px": 28
+          },
+          "content": {
+            "mod": "workspace-status"
+          }
+        }
+      ]
+    }
+  ]
+}

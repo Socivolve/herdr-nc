@@ -1,0 +1,20 @@
+herdr-nc — Copyright 2026 Socivolve
+
+This product includes software derived from herdr-app (https://github.com/herdrdev/herdr-app),
+licensed under Apache-2.0.
+
+Files derived from herdr-app, with changes:
+
+- layouts/nc.json: from the default layout "main", herdr-app 0.1.15
+- keys.json: from keys.macos.json, herdr-app 0.1.16 (two global keys added)
+- mods/nc-agents/: from mods/agents, herdr-app 0.1.16
+- mods/nc-spaces/: from mods/spaces, herdr-app 0.1.16
+- mods/nc-workspace-chrome/: from mods/workspace-chrome, herdr-app 0.1.16
+- mods/nc-folders/main.js: directory(), the git status parsing, LANG and the preview are
+  adapted from mods/files/main.js, herdr-app 0.1.15
+- mods/nc-git/main.js: follows the read-only git flags and the list and scrollbar pattern of
+  mods/changes and mods/files, herdr-app 0.1.16
+
+File copied from herdr-app unchanged:
+
+- mods/nc-orchestrator/spinner.svg: mods/workspace-chrome/spinner.svg, herdr-app 0.1.15 and 0.1.16

@@ -1,0 +1,64 @@
+#!/bin/bash
+# Self-test for deploy and pull: runs them on a temp copy of this repo against temp
+# Herdr homes. Never touches the repo or the real home. Run after changing scripts/.
+set -euo pipefail
+SRC="$(cd "$(dirname "$0")/.." && pwd)"
+T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+R="$T/repo copy"; H="$T/home dir"
+cp -R "$SRC" "$R"; rm -rf "$R/.git" "$R/local" "$R/mods" "$R/programs.json"; mkdir -p "$H"
+# A tiny layout that needs no mods, so the run stays fast and works on a fresh clone.
+printf '{ "id": "root", "type": "tabs" }\n' > "$R/layouts/nc.json"
+export HERDR_APP_HOME="$H"
+
+ok()  { echo "ok   $1"; }
+no()  { echo "FAIL $1"; sed 's/^/     /' "$T/out"; exit 1; }
+d()   { "$R/scripts/deploy" "$@" > "$T/out" 2>&1; }
+p()   { "$R/scripts/pull" > "$T/out" 2>&1; }
+has() { grep -q -- "$1" "$T/out"; }
+edit() { jq "$2" "$1" > "$T/j" && mv "$T/j" "$1"; }
+
+d && [ -f "$H/layouts/nc.json" ] && [ -f "$H/keys.json" ] || no "first deploy copies everything"
+ok "first deploy copies everything"
+d && has "Already up to date" || no "second deploy is a no-op"
+ok "second deploy is a no-op"
+
+edit "$H/settings.json" '.zoom = 2'; edit "$R/layouts/nc.json" '.nc_test = 1'
+if d; then no "a Herdr-side edit stops the deploy"; fi
+has "Nothing copied" && ! grep -q nc_test "$H/layouts/nc.json" || no "a Herdr-side edit stops the deploy"
+ok "a Herdr-side edit stops the deploy and copies nothing"
+p && [ "$(jq .zoom "$R/settings.json")" = 2 ] || no "pull takes the Herdr-side edit"
+d && grep -q nc_test "$H/layouts/nc.json" || no "deploy goes through after pull"
+ok "pull takes the edit, then deploy goes through"
+
+echo '{"theirs": 1}' > "$H/programs.json"; echo '{"mine": 1}' > "$R/programs.json"
+d && has "Left alone" && grep -q theirs "$H/programs.json" || no "a foreign file is left alone"
+ok "a foreign file is left alone, the rest deploys"
+d --force && grep -q mine "$H/programs.json" && ls "$R"/local/backup/*/programs.json > /dev/null || no "--force with backup"
+ok "--force takes it over and backs up the old one"
+
+mkdir -p "$R/mods"; cp -R "$SRC/mods/nc-cards" "$R/mods/nc-t"
+mkdir -p "$R/mods/nc-t/sub dir"; echo x > "$R/mods/nc-t/sub dir/a b.txt"
+mkdir -p "$H/mods/other"; echo x > "$H/mods/other/main.js"
+d && [ -f "$H/mods/nc-t/sub dir/a b.txt" ] || no "a mod with nested files deploys"
+grep -m1 'mods/nc-t/' "$T/out" | grep -q 'mod\.json' || no "mod.json is copied before the mod's code"
+ok "a mod deploys, mod.json first"
+rm -rf "$R/mods/nc-t"
+d && [ ! -e "$H/mods/nc-t" ] && [ -f "$H/mods/other/main.js" ] || no "removing a mod tidies only our folder"
+ok "removing a mod removes its folder and nothing else"
+
+cp "$R/layouts/nc.json" "$R/layouts/nc-x.json"; d; rm "$R/layouts/nc-x.json"
+p && [ ! -f "$R/layouts/nc-x.json" ] || no "pull keeps a layout deleted in the repo deleted"
+d && [ ! -f "$H/layouts/nc-x.json" ] || no "deploy removes the deleted layout"
+ok "a layout deleted in the repo stays deleted"
+cp "$H/layouts/nc.json" "$H/layouts/nc-new.json"
+p && [ -f "$R/layouts/nc-new.json" ] || no "pull brings in a new nc layout made in Herdr"
+ok "pull brings in a new nc layout made in Herdr"
+
+H2="$T/home two"; mkdir -p "$H2"; cp "$R/keys.json" "$H2/keys.json"
+HERDR_APP_HOME="$H2" "$R/scripts/deploy" > "$T/out" 2>&1 || no "deploy into a home with Herdr's default keys"
+edit "$R/keys.json" '.global["cmd-k"] = "app.palette"'
+HERDR_APP_HOME="$H2" "$R/scripts/deploy" > "$T/out" 2>&1 && has "Left alone" && ! grep -q cmd-k "$H2/keys.json" ||
+  no "a file that only matched by chance is not adopted"
+ok "a file that only matched by chance is not adopted"
+
+echo "selftest passed"
