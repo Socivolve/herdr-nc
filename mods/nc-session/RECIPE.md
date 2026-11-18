@@ -103,6 +103,9 @@ show your own prompts and files.
   - The subagent transcripts `<project>/<sessionId>/subagents/**/agent-*.jsonl`.
   - In `--orch` mode only: the workflow end records, scripts and journals under
     `<project>/<sessionId>/`, and the status file described below.
+  - In `--orch` mode only: for each `nc delegate` worker the main transcript started,
+    `~/.nc/delegate/<task id>/{request,result,status}.json` and the event types, tool names,
+    tokens and cost of its `events.jsonl`.
 - **What it calls and writes:** no network, and it writes no files.
 - **One shared run:** a module-level `inflight` is the one deliberate exception to "state per
   copy in the class". While one copy's helper run is still going, the other copy asking for the
@@ -120,11 +123,11 @@ show your own prompts and files.
   - The output holds only counts, model ids, names and file paths, never message text or file
     contents.
 - **The feed's `--orch` mode** belongs to nc-orchestrator, which runs this same file with
-  `--orch` added. It prints `session`, `flow`, `workflows` and `subagents`; usage.py's docstring
+  `--orch` added. It prints `session`, `flow`, `workflows`, `subagents`, `workers` and `shells`; usage.py's docstring
   has the exact contract. `flow.routes` is the crew sizes `["one", "pair", "team"]`.
   - **Derived crew** in `flow.route` (no status file): `team` if a Workflow ran, an Agent/Task call had
     `isolation: "worktree"`, or 2+ Agent/Task calls had `subagent_type` implementer or tester
-    (after the latest prompt); else `pair` if a `subagent_type` contains `review`; else `one`.
+    (after the latest prompt; an `nc delegate` worker counts as an Agent call with its role); else `pair` if a `subagent_type` contains `review`; else `one`.
   - **Status file** `~/.claude/nc-orchestrator/<sessionId>.json` counts only when it parses and
     was modified less than 6 hours ago. The feed never writes it.
   - **Version 3** is written by `nc orchestrator status` from nc-harness (optional).

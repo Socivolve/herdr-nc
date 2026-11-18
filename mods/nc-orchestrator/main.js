@@ -1,5 +1,6 @@
 // Orchestrator card: what the followed Claude Code session is doing, as an animated pipeline
-// (prompt → main → crew → branches → stages → outcome), its workflows and its subagents.
+// (prompt → main → crew → branches → stages → outcome), its workflows, its subagents, its
+// nc delegate workers and its background shells.
 // With a v3 status file it shows the plan (musts, phases, lanes, tasks) and can approve it.
 // Data: mods/nc-session/usage.py --orch (contract in RECIPE.md). It writes nothing; the only
 // actions are hc send (Approve plan), terminal.peek (a worker) and notify (toasts).
@@ -16,7 +17,7 @@ const hideCard = (t, id) => div().id("nc-card-hide").flex_none().px(4).text_size
 
 const PY = "/usr/bin/python3";
 const SPIN = "mods/nc-orchestrator/spinner.svg"; // copy of Herdr's workspace-chrome/spinner.svg (Apache-2.0)
-const FAST = 3000; // while the session is busy or a workflow runs
+const FAST = 3000; // while the session is busy or a workflow, worker or background shell runs
 const SLOW = 15000; // otherwise
 const MARCH = ["›  ", "›› ", "›››", " ››", "  ›", "   "];
 
@@ -28,6 +29,8 @@ const KIND = {
   idle: "idle", skipped: "skip",
   // plan task statuses
   pass: "done", review: "run", redo: "run", fail: "err", conflict: "err", blocked: "err",
+  // nc delegate worker statuses ("ended": stopped, not collected yet)
+  ended: "done", cannot_complete: "err", requires_user_auth: "err", timeout: "err", unreadable: "err",
 }; // anything else (pending, unknown) waits
 const LOOKS = {
   run: { tone: "working", icon: "spin", word: "running" },
@@ -284,7 +287,8 @@ export default class Orchestrator extends View {
     if (this.busy || !g.addr || g.addr !== this.addr) return;
     // A terminal without claude in front is asked again only every 15 s (or at once on a status change, in render).
     const fast = this.noClaude !== g.addr && (g.status === "working" || this.data?.session?.status === "busy"
-      || (this.data?.workflows ?? []).some((w) => w.status === "running"));
+      || (this.data?.workflows ?? []).some((w) => w.status === "running")
+      || (this.data?.workers ?? []).some((w) => w.status === "running") || (this.data?.shells ?? []).length > 0);
     if (fast || Date.now() - this.ran >= SLOW) this.refresh(cx);
   }
 
@@ -415,7 +419,9 @@ export default class Orchestrator extends View {
 
     const running = Number(s.agents_running) || 0;
     const age = s.started ? now - s.started : (Number(s.elapsed_s) || 0) * 1000;
-    const facts = [s.status === "busy" ? "working" : "idle", running ? `${running} agent${running === 1 ? "" : "s"} running` : null, `${tok(s.tokens)} tok`];
+    const shells = Number(s.shells_running) || 0;
+    const facts = [s.status === "busy" ? "working" : "idle", running ? `${running} agent${running === 1 ? "" : "s"} running` : null,
+      shells ? `${shells} shell${shells === 1 ? "" : "s"}` : null, `${tok(s.tokens)} tok`];
 
     const prompt = h_flex().w_full().min_w(0).h(24 * z).flex_none().px(9 * z).gap(6 * z).items_center().rounded(6).bg(t.surface)
       .font_family(v.mono).text_size(11 * z)
@@ -610,6 +616,43 @@ export default class Orchestrator extends View {
     })];
   }
 
+  // nc delegate workers (OpenCode in an nc-work task): role, model, last tool while running,
+  // tokens, cost, time. A worker whose terminal is there gets "peek".
+  workers(v, d, big) {
+    const { t, z, now } = v, all = d.workers ?? [], list = all.slice(0, 8);
+    if (!list.length) return [];
+    const terms = terminals();
+    return [this.section(v, "Workers", all.length), ...list.map((w) => {
+      const on = kind(w.status) === "run", word = kind(w.status) === "done" && w.status !== "ended" ? null : w.status;
+      const term = terms.find((m) => m.name === w.id);
+      const model = String(w.model || "").replace(/^openrouter\//, "");
+      return h_flex().id(`wk-${w.id}`).h(22 * z).flex_none().gap(7 * z).items_center()
+        .when(Boolean(w.reason), (el) => el.tooltip(String(w.reason)))
+        .child(icon(v, w.status, 12))
+        .child(text(11 * z, t.dim, w.role || "worker").flex_none().max_w(70 * z))
+        .child(text(12 * z, on ? t.muted : t.dim, model || w.id).flex_1())
+        .when(on && Boolean(w.last_tool), (el) => el.child(text(11 * z, t.dim, w.last_tool).flex_none().max_w(70 * z)))
+        .when(!on && Boolean(word), (el) => el.child(text(11 * z, look(t, w.status).c, word.replace(/_/g, " ")).flex_none()))
+        .when(big || on, (el) => el.child(text(11 * z, t.dim, `${tok(w.tokens)} tok`).flex_none()))
+        .when(big || typeof w.cost_usd === "number", (el) => el.child(text(11 * z, t.dim, money(w.cost_usd)).flex_none()))
+        .child(text(11 * z, on ? t.working : t.dim, span(w.started, w.ended, now)).flex_none())
+        .when(Boolean(term), (el) => el.child(noDrag(div().id(`wk-peek-${w.id}`).flex_none().px(5).rounded(4).bg(t.raised)
+          .text_size(10 * z).text_color(t.accent).cursor_pointer().hover((s) => s.bg(t.hover))
+          .on_click(() => run("terminal.peek", { terminal: term.address })).child("peek"))));
+    })];
+  }
+
+  // Background shells (Bash run_in_background) the session still waits for.
+  shells(v, d) {
+    const { t, z, now } = v, all = d.shells ?? [];
+    if (!all.length) return [];
+    return [this.section(v, "Shells", all.length), ...all.map((x) => h_flex().id(`sh-${x.id}`).h(22 * z).flex_none()
+      .gap(7 * z).items_center()
+      .child(icon(v, "running", 12))
+      .child(text(12 * z, t.muted, x.description).flex_1())
+      .child(text(11 * z, t.working, span(x.started, null, now)).flex_none()))];
+  }
+
   render(cx) {
     const t = theme(), p = props(), big = Boolean(p?.window), z = big ? 1.25 : 1;
     const v = { t, z, big, now: Date.now(), mono: settings().font_family ?? "JetBrains Mono" };
@@ -652,7 +695,8 @@ export default class Orchestrator extends View {
       .when(big, (el) => el.bg(t.chrome).rounded(10))
       .child(head)
       .child(d
-        ? body.children([...this.flow(v, d), ...this.workflows(v, d, big), ...this.subagents(v, d, big)])
+        ? body.children([...this.flow(v, d), ...this.workflows(v, d, big), ...this.subagents(v, d, big),
+          ...this.workers(v, d, big), ...this.shells(v, d)])
           .when(Boolean(this.err), (el) => el.child(div().pt(8).text_size(11).text_color(t.dim).truncate().child(String(this.err))))
         : body.child(div().text_size(12 * z).text_color(t.dim).child(note)));
   }

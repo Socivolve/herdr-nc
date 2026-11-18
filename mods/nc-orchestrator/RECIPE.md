@@ -8,7 +8,8 @@ worked on right now, dashed is still to come, amber "!" failed. When the orchest
 v3 plan (status file, see below), the card shows the plan instead of the stages: its state,
 musts, phases with their lanes and tasks, and an "Approve plan" button while the plan
 waits. Under the pipeline, the card lists the session's workflows and its Agent-tool
-subagents. "pipeline ↗" opens the same view, larger, in a window, with the whole plan open.
+subagents, its `nc delegate` workers (OpenCode in nc-work tasks) and the background shells it
+still waits for. "pipeline ↗" opens the same view, larger, in a window, with the whole plan open.
 
 (No `preview.png`: screenshots of it show private prompts.)
 
@@ -46,7 +47,8 @@ line, failed ones `blocked`, idle ones `border`. A line takes the look of what i
   - a 14px line into **main**: a full-width node (radius 8). Line 1: status icon, "main"
     (bold), the model label (`muted`), and on the right the session's age ("43:00", or
     "3h 17m" from one hour) and its cost ("$31.42", semibold). Line 2, 11px `dim`:
-    "working · 2 agents running · 48.2M tok". Running while the session is busy, else idle.
+    "working · 2 agents running · 1 shell · 48.2M tok" (agents count workflow agents, subagents
+    and nc delegate workers). Running while the session is busy, else idle.
   - a line into **crew**: a small centred node "crew → team", done once `flow.route` is set.
     A v1 status file adds a "skill" badge, a v3 status file a "plan" badge (`raised` background,
     `accent` text). Hovering the node shows `flow.reason` as a tooltip, when there is one.
@@ -103,6 +105,14 @@ line, failed ones `blocked`, idle ones `border`. A line takes the look of what i
       "dependency-audit · failed" (killed, stale and failed show their status word).
   - **Subagents (n)**: at most 6 rows, 22px: icon, type (`dim`, at most 96px), description
     (`muted` while running, else `dim`) and the elapsed time (`working` while running).
+  - **Workers (n)**: at most 8 `nc delegate` workers, running first, 22px rows: icon, role (`dim`,
+    at most 70px), model without "openrouter/" (`muted` while running, else `dim`), then while
+    running the last tool, tokens and cost; when stopped the status word in its look (left out for
+    "done"; "ended" means stopped but not collected yet) and the cost when known; the elapsed time
+    (`working` while running). A failed worker's reason is the row's tooltip. A "peek" button shows
+    when a terminal named like the worker's task id exists.
+  - **Shells (n)**: the session's background shells (Bash `run_in_background`) not reported
+    finished yet: spinner, description (`muted`), elapsed time (`working`).
 - **Window** ("pipeline ↗"): a Herdr window 760×680 with the key `nc-orchestrator-window`, a
   `chrome` background and a "✕" in the header. Everything is 1.25× larger. A plan shows whole:
   phases as rows, lanes always as columns, every task expanded (with its "after: B1" line),
@@ -161,11 +171,11 @@ line, failed ones `blocked`, idle ones `border`. A line takes the look of what i
   task turns fail, conflict or blocked ("Task C1: fail", level error), or the plan's state turns
   `awaiting_approval` (warning), `done` (success) or `error` (error). Once per transition. The
   first load of a session only records what is there, so nothing already shown toasts.
-- **Peek a worker**: "peek" runs `terminal.peek { terminal: <address> }` for the terminal in
-  `terminals()` whose `name` equals the task's delegate id.
+- **Peek a worker**: "peek" (a task's details or a Workers row) runs `terminal.peek { terminal: <address> }` for the terminal in
+  `terminals()` whose `name` equals the task's delegate id or the worker's task id.
 - **Refresh**: one `cx.timer.every(3000)`, for data only:
   - it runs the feed on every tick while the followed agent is `working`, the session is
-    `busy` or a workflow is `running`; otherwise once every 15 s;
+    `busy`, a workflow or a worker is `running` or a background shell is open; otherwise once every 15 s;
   - it skips a tick while the last run is still going;
   - each tick reads the followed agent live (`spaces()`/`agents()`), because a hidden copy
     keeps ticking without rendering; a tick does nothing when that agent is gone or not the
@@ -237,6 +247,9 @@ line, failed ones `blocked`, idle ones `border`. A line takes the look of what i
   - `~/.claude/projects/<cwd encoded>/<sessionId>.jsonl` and that session's `workflows/` and
     `subagents/` folders
   - `~/.claude/nc-orchestrator/<sessionId>.json` (see below)
+  - for each worker the main transcript started (the JSON lines `nc delegate` prints):
+    `~/.nc/delegate/<task id>/request.json`, `result.json`, `status.json` and, from
+    `events.jsonl`, only event types, tool names, tokens and cost
 - **Network**: none. **Writes**: no files. The only thing it types anywhere is "ok" into the
   followed agent, and only on a click on "Approve plan".
 
@@ -245,7 +258,7 @@ line, failed ones `blocked`, idle ones `border`. A line takes the look of what i
 ```
 { "v": 1, "unchanged": false, "sig": "...", "error": null,        // null | "no-session" | "no-transcript"
   "session": { "id", "cwd", "status": "busy|idle|null", "model", "label", "started", "elapsed_s",
-               "agents_running", "tokens", "usd" },
+               "agents_running", "shells_running", "tokens", "usd" },
   "flow": { "source": "derived|skill|plan", "prompt", "routes": [...], "route",
             "reason": null | "...", "state": null | "planning|awaiting_approval|running|closing|done|error",
             "steps": [ { "title", "status": "done|running|pending|error", "done", "total" } ],
@@ -258,6 +271,9 @@ line, failed ones `blocked`, idle ones `border`. A line takes the look of what i
                    "cost_usd", "tools", "last_tool", "started", "last_activity", "ended" } ],
                    "totals": { "agents", "cost_usd", "tools" } } ],
   "subagents": [ { "id", "type", "description", "status", "model", "cost_usd", "tools", "started", "ended" } ],
+  "workers": [ { "id", "role", "model", "status": "running|ended|done|failed|cannot_complete|requires_user_auth|…",
+                 "started", "ended", "cost_usd", "tokens", "tools", "last_tool", "reason" } ],
+  "shells": [ { "id", "description", "started" } ],
   "scan_ms": 0 }
 
 TASK = { "id", "title", "role", "status": "pending|running|review|redo|pass|fail|blocked|conflict",
@@ -275,11 +291,20 @@ TASK = { "id", "title", "role", "status": "pending|running|review|redo|pass|fail
   - **prompt**: the latest typed prompt of the main transcript.
   - **crew** (`route`, one of `routes` = one, pair, team): `team` if, after that prompt, a
     Workflow ran, an Agent/Task call had isolation "worktree", or 2+ Agent/Task calls had
-    subagent_type implementer or tester; else `pair` if an Agent/Task `subagent_type` contains
+    subagent_type implementer or tester (an `nc delegate` worker counts as an Agent call with
+    its role); else `pair` if an Agent/Task `subagent_type` contains
     "review"; else `one`.
   - **steps**: the phases of the newest workflow launched after the prompt.
-  - **outcome**: `working` while the session is busy or a workflow, workflow agent or
-    subagent is still running (they go on after the main turn ends), else `done`.
+  - **outcome**: `working` while the session is busy or a workflow, workflow agent,
+    subagent or `nc delegate` worker is still running or a background shell is open (they go
+    on after the main turn ends), else `done`. Its `usd` adds the known cost of the workers
+    started after the prompt.
+  - **workers**: status as `nc delegate --list` reads the run folder: `result.json`'s status once
+    collected; else `running` until `status.json` exists or start + timeout + 180 s passed, then
+    `ended`. Without a run folder (cleaned up, or a broker run elsewhere) the last status the
+    transcript shows, turned `ended` after an `nc delegate --cleanup` line for it or 20 minutes.
+  - **shells**: Bash calls with `run_in_background` in the main transcript without a
+    `<task-notification>` for their tool use id; none when claude is no longer running.
 
 ### The v3 status file (the orchestrator's plan)
 
@@ -372,8 +397,10 @@ name.
 - The prompt line is user text. It shows on screen and in screenshots.
 - The feed has no last activity for subagents; their rows show the elapsed time instead.
 - At the narrowest rail (300px) the stage titles are truncated hard: the bar stays 110px.
-- Caps: the feed sends at most 5 workflows (agents for the first 2) and 8 subagents; the card
-  shows 4 and 6.
+- Caps: the feed sends at most 5 workflows (agents for the first 2), 8 subagents, 8 workers and
+  6 shells; the card shows 4, 6, 8 and all.
+- Workers in an nc-work container through the broker have no run folder on the session's
+  machine: their rows show only what the transcript printed.
 
 ## Done when
 

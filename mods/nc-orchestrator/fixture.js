@@ -6,7 +6,8 @@
 // demo: "closing"     the same plan in its closing state, on crew "pair" ("one" and "team" skipped).
 // demo: "derived"     the derived flow: stages done → running (with a done, a running and a
 //                     failed agent) → pending.
-// All of them: a running, a finished and a failed workflow, running and done subagents.
+// All of them: a running, a finished and a failed workflow, running and done subagents,
+// nc delegate workers (running, done, failed) and one background shell.
 // Names and numbers are made up.
 
 export function demo(now, variant) {
@@ -83,7 +84,7 @@ export function demo(now, variant) {
     session: {
       id: "00000000-0000-4000-8000-000000000000", cwd: "~/demo", status: approval ? "idle" : "busy",
       model: "claude-opus-5-5", label: "Opus 5.5", started: ago(2580), elapsed_s: 2580,
-      agents_running: 2, tokens: 48210000, usd: 31.42,
+      agents_running: 3, shells_running: 1, tokens: 48210000, usd: 31.42,
     },
     flow: variant === "derived" ? derivedFlow : planFlow,
     workflows: [
@@ -130,6 +131,15 @@ export function demo(now, variant) {
       { id: "s03", type: "implementer", description: "A1 Limiter interface and config", status: "done",
         model: "claude-opus-5-5", cost_usd: 0.84, tools: 21, started: ago(520), ended: ago(400) },
     ],
+    workers: [
+      { id: "d0101-0900-a1b2", role: "tester", model: "openrouter/demo/coder-mini:free", status: "running", started: ago(95),
+        ended: null, cost_usd: 0, tokens: 412000, tools: 23, last_tool: "grep", reason: null },
+      { id: "d0101-0900-c3d4", role: "implementer", model: "openrouter/demo/coder-large", status: "done", started: ago(700),
+        ended: ago(480), cost_usd: 0.07, tokens: 1310000, tools: 41, last_tool: "edit", reason: null },
+      { id: "d0101-0900-e5f6", role: "tester", model: "openrouter/demo/coder-mini:free", status: "failed", started: ago(700),
+        ended: ago(610), cost_usd: 0, tokens: 960000, tools: 45, last_tool: "write", reason: "RESULT.md missing or without a valid status line" },
+    ],
+    shells: [{ id: "toolu_demo1", description: "Wait for the workers and collect results", started: ago(90) }],
     scan_ms: 42,
   };
 }

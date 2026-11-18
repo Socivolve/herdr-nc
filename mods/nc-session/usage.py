@@ -11,7 +11,9 @@ current signature (sizes of every file involved) it prints only {"v":1,"unchange
 
 Reads, never writes: ~/.claude/sessions/<pid>.json (never the *.key files next to it), the main transcript
 ~/.claude/projects/<project>/<session>.jsonl, everything under <session>/subagents and <session>/workflows,
-and in --orch mode ~/.claude/nc-orchestrator/<session>.json.
+and in --orch mode ~/.claude/nc-orchestrator/<session>.json plus, for each nc delegate worker the main transcript
+started, ~/.nc/delegate/<task id>/{request,result,status}.json and the event types, tool names, tokens and cost
+of its events.jsonl.
 Prints only ids, labels, model ids, counts, statuses, times (epoch ms), tool/skill/connector names, file paths
 (usage mode) and the first line of the latest typed prompt, max 100 chars (orch mode). Never message text,
 results, scripts or file contents.
@@ -64,6 +66,11 @@ ROUTES = ["one", "pair", "team"]
 TASK_STATUS = ("pending", "running", "review", "redo", "pass", "fail", "blocked", "conflict")
 STATES = ("planning", "awaiting_approval", "running", "closing", "done", "error")
 NOTE_ID, NOTE_STATUS = re.compile(r"<task-id>(.*?)</task-id>"), re.compile(r"<status>(.*?)</status>")
+NOTE_TOOL = re.compile(r"<tool-use-id>(.*?)</tool-use-id>")
+DELEGATE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,39}")
+DELEGATE_GONE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9-]{0,39}): task, .*deleted", re.M)  # nc delegate --cleanup
+DELEGATE_GRACE_MS = 180_000  # nc delegate's GRACE_S: a worker past timeout + grace has ended
+DELEGATE_FALLBACK_MS = 20 * 60_000  # no run folder to read (broker run): assume ended this long after the start
 UUID = re.compile(r"[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}")
 
 
@@ -167,6 +174,10 @@ class Scan:
         self.msgs, self.uses, self.errored, self.first, self.notes, self.errors = {}, {}, set(), {}, {}, []
         self.worktree = set()  # tool_use ids of Agent/Task calls with isolation "worktree"
         self.prompt = ("", "")  # (timestamp, first line) of the latest typed prompt in the main transcript
+        self.bg = {}  # tool_use id -> (description, timestamp) of Bash calls run in the background (main transcript)
+        self.ended = set()  # tool_use ids a <task-notification> reported as finished
+        self.delegates = {}  # nc delegate task id -> dict(role, model, status, ts) from the JSON it printed
+        self.gone = set()  # delegate task ids `nc delegate --cleanup` deleted
 
     def err(self, path, what):
         if len(self.errors) < 10:
@@ -208,7 +219,8 @@ class Scan:
                     a = b'"type":"assistant"' in raw
                     e = not a and b'"is_error":true' in raw
                     u = main and not a and (b"<task-notification>" in raw or
-                                            (b'"type":"user"' in raw and b'"tool_use_id"' not in raw))
+                                            (b'"type":"user"' in raw and b'"tool_use_id"' not in raw) or
+                                            (b'"tool_use_id"' in raw and (b"task_id" in raw or b"deleted" in raw)))
                     if not (a or e or u or probe):
                         continue
                     try:
@@ -243,18 +255,26 @@ class Scan:
                                           s(i.get("skill")), s(i.get("subagent_type")), ts, path)
                     if i.get("isolation") == "worktree":
                         self.worktree.add(b["id"])
+                    if main and b.get("name") == "Bash" and i.get("run_in_background") is True:
+                        self.bg[b["id"]] = ((s(i.get("description")) or "shell")[:60], ts)
             return
         for b in blocks:
             if b.get("type") == "tool_result" and b.get("is_error") is True:
                 self.errored.add(b.get("tool_use_id"))
         if not main:
             return
+        for b in blocks:
+            if b.get("type") == "tool_result":
+                self.delegate_lines(b.get("content"), ts)
         text = content if isinstance(content, str) else next((b.get("text") for b in blocks if b.get("type") == "text"), None)
         note = o.get("content") if t == "queue-operation" else text
         if isinstance(note, str) and "<task-notification>" in note:
             i, st = NOTE_ID.search(note), NOTE_STATUS.search(note)
             if i and st:
                 self.notes[i.group(1).strip()] = st.group(1).strip()
+            tu = NOTE_TOOL.search(note)
+            if tu and st:
+                self.ended.add(tu.group(1).strip())
             return
         origin = o.get("origin")
         if (t != "user" or o.get("isMeta") or o.get("isCompactSummary") or o.get("isVisibleInTranscriptOnly")
@@ -264,6 +284,28 @@ class Scan:
         text = text.strip()
         if text and not text.startswith(("<", "[Request interrupted")) and ts >= self.prompt[0]:
             self.prompt = (ts, text.splitlines()[0].strip()[:100])
+
+    def delegate_lines(self, content, ts):
+        """nc delegate prints one JSON object per worker and line; --cleanup prints "<id>: task, ... deleted"."""
+        text = content if isinstance(content, str) else "\n".join(
+            b.get("text") for b in content if isinstance(b, dict) and isinstance(b.get("text"), str)) if isinstance(content, list) else ""
+        if "task_id" not in text and "deleted" not in text:
+            return
+        for line in text.splitlines():
+            line = line.strip()
+            if not line.startswith('{"task_id"'):
+                continue
+            try:
+                o = json.loads(line)
+            except ValueError:
+                continue
+            tid = o.get("task_id") if isinstance(o, dict) else None
+            if not (isinstance(tid, str) and DELEGATE_ID.fullmatch(tid) and o.get("runtime") == "opencode" and s(o.get("status"))):
+                continue
+            d = self.delegates.setdefault(tid, dict(role=None, model=None, status=None, ts=ts))
+            d.update(role=s(o.get("role"))[:20] if s(o.get("role")) else d["role"],
+                     model=s(o.get("model"))[:80] if s(o.get("model")) else d["model"], status=o["status"][:30])
+        self.gone.update(m.group(1) for m in DELEGATE_GONE.finditer(text))
 
     def account(self, since=""):
         """-> per-model rows, per-file totals, USD spent at or after timestamp `since`."""
@@ -345,18 +387,21 @@ def run(base, pid, since=None, orch=False, home=None, now=None):
         extra = (glob.glob(f"{sdir}/subagents/workflows/wf_*/journal.jsonl") + glob.glob(f"{sdir}/workflows/wf_*.json")
                  + glob.glob(f"{sdir}/workflows/scripts/*.js") + glob.glob(f"{sdir}/subagents/agent-*.meta.json"))
         st = stats(files + extra)
+        dl = delegate_files(home)
+        dst = stats(dl)
         ovp = f"{base}/nc-orchestrator/{sess['id']}.json"
         ov = stats([ovp]).get(ovp)
         ov_ok = ov is not None and now - ov[1] < OVERRIDE_MAX_S * 1000
         live = alive(pid)
         fresh = sum(1 for v in st.values() if now - v[1] < STALE_MS)
         sig = (f"o:{sess['id']}:{sess['status']}:{int(live)}:{len(st)}:{sum(v[0] for v in st.values())}:{fresh}:"
-               f"{ov[0] if ov else '-'}-{ov[1] if ov else '-'}-{int(ov_ok)}")
+               f"{ov[0] if ov else '-'}-{ov[1] if ov else '-'}-{int(ov_ok)}:"
+               f"{len(dst)}-{sum(v[0] for v in dst.values())}-{sum(v[1] for v in dst.values()) % 10**9}-{now // 60000 if dst else ''}")
         if sig == since:
             return dict(v=1, unchanged=True, sig=sig)
         for p in files:
             sc.read(p, main=p == main)
-        out = orch_out(sc, sess, reg, main, st, live, now, ovp if ov_ok else None)
+        out = orch_out(sc, sess, reg, main, st, live, now, ovp if ov_ok else None, home)
     out.update(v=1, unchanged=False, sig=sig, error=None)
     out["errors"] = sc.errors
     out["scan_ms"] = int((time.time() - t0) * 1000)
@@ -420,7 +465,59 @@ def script_meta(path):
     return (name.group(2) if name else None), ([t[1] for t in re.findall(r"\btitle" + q, ph.group(1))] if ph else [])
 
 
-def orch_out(sc, sess, reg, main, st, live, now, override):
+def delegate_files(home):
+    """The files whose change can change a worker's row: one glob over every run folder (there are few)."""
+    root = glob.escape(f"{home}/.nc/delegate")
+    return [p for n in ("request.json", "result.json", "status.json", "events.jsonl") for p in glob.glob(f"{root}/*/{n}")]
+
+
+def worker(sc, home, did, d, now):
+    """One nc delegate worker: the run folder's state as `nc delegate --list` reads it, else what the transcript said."""
+    w = dict(id=did, role=d["role"], model=d["model"], status=d["status"], started=ms(d["ts"]), ended=None,
+             cost_usd=None, tokens=0, tools=0, last_tool=None, reason=None)
+    dd = f"{home}/.nc/delegate/{did}"
+    req = sc.jload(f"{dd}/request.json") if os.path.isdir(dd) else None
+    if not isinstance(req, dict):
+        # no run folder here: cleaned up, or a broker run in another container
+        if w["status"] == "running" and (did in sc.gone or now - (w["started"] or 0) > DELEGATE_FALLBACK_MS):
+            w["status"] = "ended"
+        return w
+    w["role"] = s(req.get("role")) or w["role"]
+    w["model"] = (s(req.get("model")) or w["model"] or "")[:80] or None
+    w["started"] = ms(req.get("started")) or w["started"]
+    res, done = sc.jload(f"{dd}/result.json"), sc.jload(f"{dd}/status.json")
+    tmin = req.get("timeout_min") if isinstance(req.get("timeout_min"), int) else 15
+    if isinstance(res, dict) and s(res.get("status")):
+        w["status"], w["reason"] = res["status"][:30], (s(res.get("reason")) or "")[:120] or None
+        if isinstance(res.get("cost_usd"), (int, float)):
+            w["cost_usd"] = round(num(res["cost_usd"]), 4)
+    elif isinstance(done, dict) or now > (w["started"] or 0) + tmin * 60_000 + DELEGATE_GRACE_MS:
+        w["status"] = "ended"  # the worker stopped; `nc delegate --result` collects it
+    else:
+        w["status"] = "running"
+    if isinstance(done, dict):
+        w["ended"] = ms(done.get("ended"))
+    usd, last = 0.0, None
+    for o in sc.jlines(f"{dd}/events.jsonl"):
+        part = o.get("part") if isinstance(o.get("part"), dict) else {}
+        if isinstance(o.get("timestamp"), int):
+            last = o["timestamp"]
+        if o.get("type") == "tool_use":
+            w["tools"] += 1
+            w["last_tool"] = (s(part.get("tool")) or "?")[:30]
+        elif o.get("type") == "step_finish":
+            t = part.get("tokens") if isinstance(part.get("tokens"), dict) else {}
+            c = t.get("cache") if isinstance(t.get("cache"), dict) else {}
+            w["tokens"] += int(sum(num(t.get(k)) for k in ("input", "output", "reasoning")) + num(c.get("read")) + num(c.get("write")))
+            usd += num(part.get("cost"))
+    if w["cost_usd"] is None and (usd or w["tools"]):
+        w["cost_usd"] = round(usd, 4)
+    if w["status"] != "running":
+        w["ended"] = w["ended"] or last
+    return w
+
+
+def orch_out(sc, sess, reg, main, st, live, now, override, home):
     since = sc.prompt[0]
     _, files, since_usd = sc.account(since)
     ntools, last_tool = sc.tools_by_file()
@@ -459,14 +556,31 @@ def orch_out(sc, sess, reg, main, st, live, now, override):
                               ended=None if status == "running" else a["last_activity"]))
     subagents.sort(key=lambda a: -(a["started"] or 0))
 
+    workers = []
+    for did, d in sc.delegates.items():
+        try:
+            workers.append(worker(sc, home, did, d, now))
+        except Exception as e:  # nc delegate's formats may change: report, never crash
+            sc.err(did, type(e).__name__)
+    workers.sort(key=lambda w: (w["status"] != "running", -(w["started"] or 0)))
+    shells = [dict(id=uid, description=desc, started=ms(ts)) for uid, (desc, ts) in sc.bg.items()
+              if live and uid not in sc.ended]
+    shells.sort(key=lambda x: -(x["started"] or 0))
+
     # flow derived from the latest typed prompt; the skill file may replace it
     after = [(n, sat, uid in sc.worktree) for uid, (n, _, _, sat, ts, p) in sc.uses.items() if p == main and ts > since]
+    # nc delegate workers count like Agent calls with their role (two implementers/testers: team)
+    after += [("Agent", d["role"], False) for d in sc.delegates.values() if d["ts"] > since and d["role"]]
     pms = ms(since) or 0
     launched = [w for w in workflows if (w["started"] or 0) >= pms]
     steps = steps_of(max(launched, key=lambda w: w["started"])) if launched else []
-    running = sum(a["status"] == "running" for w in workflows for a in w["agents"]) + sum(a["status"] == "running" for a in subagents)
-    # a Workflow or subagent keeps working after the main turn ends (registry status "waiting" → null)
-    working = sess["status"] == "busy" or running or any(w["status"] == "running" for w in workflows)
+    running = (sum(a["status"] == "running" for w in workflows for a in w["agents"]) + sum(a["status"] == "running" for a in subagents)
+               + sum(w["status"] == "running" for w in workers))
+    # a Workflow, subagent, nc delegate worker or background shell keeps working after the main turn ends
+    # (registry status "waiting" → null)
+    working = sess["status"] == "busy" or running or bool(shells) or any(w["status"] == "running" for w in workflows)
+    pms0 = ms(since) or 0
+    since_usd += sum(w["cost_usd"] or 0 for w in workers if (w["started"] or 0) >= pms0)
     flow = dict(source="derived", prompt=sc.prompt[1], routes=list(ROUTES), route=route_of(after), reason=None, state=None,
                 steps=steps, outcome=dict(status="working" if working else "done", usd=round(since_usd, 4)), plan=None)
     if override:
@@ -478,9 +592,10 @@ def orch_out(sc, sess, reg, main, st, live, now, override):
         if i >= 2:
             w["agents"] = []
     session = dict(sess, model=model, label=label(model) if model else None, started=started,
-                   elapsed_s=(now - started) // 1000 if started else None, agents_running=running,
+                   elapsed_s=(now - started) // 1000 if started else None, agents_running=running, shells_running=len(shells),
                    tokens=sum(f["tokens"] for f in files.values()), usd=round(sum(f["usd"] for f in files.values()), 4))
-    return dict(session=session, flow=flow, workflows=workflows[:5], subagents=subagents[:8])
+    return dict(session=session, flow=flow, workflows=workflows[:5], subagents=subagents[:8], workers=workers[:8],
+                shells=shells[:6])
 
 
 def workflow(sc, wid, sdir, st, agent, is_fresh, live):
@@ -869,6 +984,34 @@ def e2e(tmp):
     kw = next(x for x in run(base, pid, orch=True, home=home)["workflows"] if x["id"] == "wf_old1")
     assert kw["status"] == "killed" and steps_of(kw) == [dict(title="Only", status="error", done=1, total=2),
                                                          dict(title="Next", status="pending", done=0, total=0)], kw
+
+    # nc delegate workers and a background shell keep the outcome working after the turn; cleanup ends them
+    launch = "\n".join(json.dumps({"task_id": i, "role": "tester", "runtime": "opencode", "model": "m:free", "status": "running"},
+                                  separators=(",", ":")) for i in ("d1-a", "d1-b"))
+    put(f"{proj}/sid1.jsonl", [U(now - 60_000, "third prompt", origin={"kind": "human"}),
+        A("m5", "claude-opus-5-5", now - 50_000, 1, [("d1", "Bash", {"command": "nc delegate ..."}),
+                                                     ("d2", "Bash", {"command": "wait", "description": "Wait for workers",
+                                                                     "run_in_background": True})]),
+        U(now - 49_000, [{"type": "tool_result", "tool_use_id": "d1", "content": launch}])])
+    dd = f"{home}/.nc/delegate/d1-a"
+    put(f"{dd}/request.json", [{"task_id": "d1-a", "role": "tester", "model": "m:free", "timeout_min": 15, "started": iso(now - 48_000)}])
+    put(f"{dd}/events.jsonl", [{"type": "tool_use", "timestamp": now - 40_000, "part": {"tool": "read"}},
+                               {"type": "step_finish", "timestamp": now - 39_000, "part": {"cost": 0.01, "tokens": {"input": 10, "output": 5}}}])
+    x = run(base, pid, orch=True, home=home)
+    wk = {w["id"]: w for w in x["workers"]}
+    assert (wk["d1-a"]["status"], wk["d1-a"]["tools"], wk["d1-a"]["tokens"], wk["d1-a"]["last_tool"]) == ("running", 1, 15, "read"), wk
+    assert wk["d1-b"]["status"] == "running" and x["shells"][0]["description"] == "Wait for workers", x
+    assert (x["flow"]["route"], x["flow"]["outcome"]["status"], x["session"]["agents_running"]) == ("team", "working", 3), (x["flow"], x["session"])
+    put(f"{dd}/result.json", [{"task_id": "d1-a", "status": "failed", "cost_usd": 0, "reason": "r"}])
+    put(f"{dd}/status.json", [{"exit": 0, "ended": iso(now - 30_000)}])
+    with open(f"{proj}/sid1.jsonl", "a") as f:
+        f.write(json.dumps(U(now - 20_000, [{"type": "tool_result", "tool_use_id": "d3", "content": "d1-b: task, ref and run folder deleted"}])) + "\n")
+        f.write(json.dumps({"type": "queue-operation", "timestamp": iso(now - 10_000), "content":
+                            "<task-notification>\n<task-id>bx</task-id>\n<tool-use-id>d2</tool-use-id>\n<status>completed</status>\n</task-notification>"}) + "\n")
+    x = run(base, pid, orch=True, home=home)
+    wk = {w["id"]: w for w in x["workers"]}
+    assert (wk["d1-a"]["status"], wk["d1-a"]["reason"], wk["d1-b"]["status"]) == ("failed", "r", "ended"), wk
+    assert x["shells"] == [] and x["session"]["agents_running"] == 1, x  # only the subagent s1 still runs
 
     # errors
     assert run(base, 999_999_999) == {"v": 1, "sig": "no-session", "error": "no-session"}
