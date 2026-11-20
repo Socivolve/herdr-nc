@@ -168,7 +168,8 @@ line, failed ones `blocked`, idle ones `border`. A line takes the look of what i
   (card, window) has its own button and blocks a second click while its send runs. "ok" is
   what the orchestrator's procedure waits for as approval.
 - **Toasts**: only the card copy (not the window) posts `notify()` when, between two loads, a
-  task turns fail, conflict or blocked ("Task C1: fail", level error), or the plan's state turns
+  task turns fail, conflict or blocked ("Task C1: fail", level error; body: the task title and, on a
+  second line, its evidence, which Herdr after 0.1.16 shows in full), or the plan's state turns
   `awaiting_approval` (warning), `done` (success) or `error` (error). Once per transition. The
   first load of a session only records what is there, so nothing already shown toasts.
 - **Peek a worker**: "peek" (a task's details or a Workers row) runs `terminal.peek { terminal: <address> }` for the terminal in

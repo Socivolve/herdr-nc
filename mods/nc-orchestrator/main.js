@@ -367,7 +367,7 @@ export default class Orchestrator extends View {
     if (prev && prev.state !== state) this.sent = null; // an old Approve result belongs to the old state
     if (!prev || props()?.window) return;
     for (const x of tasks) {
-      if (kind(x.status) === "err" && prev.tasks.get(x.id) !== x.status) notify({ title: `Task ${x.id}: ${x.status}`, body: x.title ?? "", level: "error" });
+      if (kind(x.status) === "err" && prev.tasks.get(x.id) !== x.status) notify({ title: `Task ${x.id}: ${x.status}`, body: [x.title, x.evidence].filter(Boolean).join("\n"), level: "error" });
     }
     if (state === prev.state) return;
     if (state === "awaiting_approval") notify({ title: "Plan awaits approval", body: f.reason ?? "", level: "warning" });

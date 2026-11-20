@@ -92,6 +92,8 @@ their sub-agents as a tree. No preview.png: a live screenshot would show your ow
 - Show only one agents list per layout: each one calls `setAgentOrder`, and the last
   render wins.
 - A clone gets no Herdr fixes. Merge new versions with `git merge-file` (see README).
+- Also carries Herdr's upstream fixes #1004 (a kept sub-agent keeps its own done status; a helper's done does not pull a working parent out of Working), #1141 (an emoji at the start of a name stays) and #969 (the focused agent's row is marked), taken unchanged from Herdr's `master` after 0.1.16.
+  They show in the diff against 0.1.16 too; the next release contains them, so `git merge-file` takes them cleanly.
 
 ## Done when
 
